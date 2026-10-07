@@ -1,0 +1,8 @@
+.build/
+*.app/
+.DS_Store
+dist/
+Windows/**/bin/
+Windows/**/obj/
+*.zip
+.swiftpm/

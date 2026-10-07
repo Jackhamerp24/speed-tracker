@@ -1,0 +1,88 @@
+name: Build
+
+# Tests and builds both apps on every push. A tag like v0.1.0 also publishes them as a release.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: |
+          sw_vers
+          swift --version
+      - name: Test
+        run: ./Scripts/test.sh
+      - name: Build universal app
+        run: UNIVERSAL=1 ./Scripts/build_app.sh
+      - name: Check the app
+        run: |
+          codesign --verify --deep --strict "Speed Tracker.app"
+          lipo -archs "Speed Tracker.app/Contents/MacOS/SpeedTracker"
+          "Speed Tracker.app/Contents/MacOS/SpeedTracker" --diagnose 0
+      - name: Package
+        run: ditto -c -k --keepParent "Speed Tracker.app" SpeedTracker-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpeedTracker-macOS
+          path: SpeedTracker-macOS.zip
+          if-no-files-found: error
+
+  windows:
+    name: Windows app
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Test
+        run: dotnet run --project Windows/SpeedTracker.Smoke/SpeedTracker.Smoke.csproj -c Release
+      - name: Build x64
+        shell: pwsh
+        run: ./Scripts/build_windows.ps1 -Runtime win-x64
+      - name: Build ARM64
+        shell: pwsh
+        run: ./Scripts/build_windows.ps1 -Runtime win-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpeedTracker-Windows
+          path: |
+            dist/SpeedTracker-win-x64.zip
+            dist/SpeedTracker-win-arm64.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Speed Tracker $GITHUB_REF_NAME" \
+            --generate-notes
