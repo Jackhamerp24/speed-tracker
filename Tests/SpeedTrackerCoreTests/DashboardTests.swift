@@ -347,11 +347,14 @@ private func historyData(_ records: [RequestRecord]) throws -> Data {
 @Suite struct DashboardHistoryTests {
     @Test func filtersReadBeyondThousandRecordTailAndRespectBoundaries() throws {
         try withDashboardHistory { url in
-            let records = (0..<1505).map { index in
-                dashboardRecord(at: dashboardEpoch.addingTimeInterval(Double(index)),
-                                harness: index < 10 ? "Earlier Harness" : "OMP",
-                                host: index < 10 ? "gateway.example" : "api.openai.com", model: index < 10 ? "old-model" : "new-model",
-                                key: "call:\(index)")
+            // Spelled out step by step: as one expression this is too much for some compilers to type-check.
+            let records: [RequestRecord] = (0..<1505).map { (index: Int) -> RequestRecord in
+                let early = index < 10
+                let start: Date = dashboardEpoch.addingTimeInterval(Double(index))
+                let harness: String = early ? "Earlier Harness" : "OMP"
+                let host: String = early ? "gateway.example" : "api.openai.com"
+                let model: String = early ? "old-model" : "new-model"
+                return dashboardRecord(at: start, harness: harness, host: host, model: model, key: "call:\(index)")
             }
             try historyData(records).write(to: url)
             let store = HistoryStore(url: url)
