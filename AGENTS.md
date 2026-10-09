@@ -421,7 +421,7 @@ Rules a redesign must keep (they are owner requirements or past bugs, see the to
 - The Live target is chosen in the flyout (Auto or one harness). No per-harness on/off switches.
 - The flyout stays small enough for a laptop screen and sits in the corner of the work area (`live::corner`, tested).
 - Light, dark and high-contrast (`palette`) all stay legible. Text is Segoe UI from the system; bundle no fonts.
-- The exe stays small. CI fails a zip over 5 MB. Check `cargo build --release` size before adding a dependency.
+- The exe stays small. CI fails an exe over 5 MB. Check `cargo build --release` size before adding a dependency.
 
 **If egui is to be replaced:** because a window is just a process that reads snapshots and writes requests, another toolkit can take over `--ui` without touching the tray or the core. Slint is the candidate that keeps one small exe and can render without OpenGL. A web view (Tauri, WebView2) would make styling easy but depends on the WebView2 runtime and uses several times the memory, which is against the point of this rewrite. Neither has been tried here.
 
@@ -470,7 +470,7 @@ tests/fixtures/                  a DeepSeek session compressed by the reference 
 - Each area was shown able to fail by injecting defects one at a time into a scratch copy. First round: 24 defects, 23 caught at once; removing the per-file cap survived, which exposed the weak budget check above. Second round (the Live work): 19 defects, 18 caught at once; "a tool result is always a request" survived, which exposed that an interrupted tool call was being treated as a pending reply. Both are fixed and caught now.
 - **Not covered by any test:** the tray icon and its menu, the two windows beyond their pure helpers, the named pipe and UAC launch, the TCP-counter sampling, WSL home discovery, and TLS upstreams through the proxy. These need a desktop session, elevation or a network.
 
-CI (`.github/workflows/build.yml`, Windows job): `cargo test --locked`, then a check that at least 114 tests passed and none was ignored (lower that number only when tests are removed on purpose), both release builds, a 5 MB limit on each zip, and a start of the x64 exe with a malformed collector launch (exit code 2).
+CI (`.github/workflows/build.yml`, Windows job): `cargo test --locked`, then a check that at least 114 tests passed and none was ignored (lower that number only when tests are removed on purpose), both release builds, a 5 MB limit on each exe, and a start of the x64 exe with a malformed collector launch (exit code 2).
 
 ### Layout and decisions
 
@@ -501,7 +501,7 @@ Windows/src/app/           Windows only
 
 ### Building
 
-`.\Scripts\build_windows.ps1 -Runtime win-x64|win-arm64` writes `dist/SpeedTracker-<runtime>/SpeedTracker.exe` and the zip beside it. With the Visual Studio C++ tools (CI) it uses the MSVC targets with the C runtime linked in, so users need no redistributable. This PC has no Visual Studio: run `Scripts/setup_windows_gnu.ps1` once. It installs Rust's `x86_64-pc-windows-gnullvm` target, supplies the import-library tool and system import libraries that target lacks (under `~/.cargo/gnu-extras`), and writes the uncommitted `Windows/.cargo/config.toml`, which the build script then follows (x64 only). The plain `x86_64-pc-windows-gnu` target links but **every eframe program built with it crashes before `main`**; the cause was not found. Do not go back to it. In Git Bash, `export PATH="$HOME/.cargo/bin:$PATH"` first.
+`.\Scripts\build_windows.ps1 -Runtime win-x64|win-arm64` writes `dist/SpeedTracker-<runtime>/SpeedTracker.exe` and a copy named for the platform, `dist/SpeedTracker-<runtime>.exe`, which is the release download. **Releases ship the exe itself and a macOS `.dmg`, not zips** (owner request, 2026-10-10); the `.dmg` is made in the workflow's macOS job with `hdiutil` and holds the app beside a shortcut to Applications. With the Visual Studio C++ tools (CI) it uses the MSVC targets with the C runtime linked in, so users need no redistributable. This PC has no Visual Studio: run `Scripts/setup_windows_gnu.ps1` once. It installs Rust's `x86_64-pc-windows-gnullvm` target, supplies the import-library tool and system import libraries that target lacks (under `~/.cargo/gnu-extras`), and writes the uncommitted `Windows/.cargo/config.toml`, which the build script then follows (x64 only). The plain `x86_64-pc-windows-gnu` target links but **every eframe program built with it crashes before `main`**; the cause was not found. Do not go back to it. In Git Bash, `export PATH="$HOME/.cargo/bin:$PATH"` first.
 
 ### Verifying without clicking
 

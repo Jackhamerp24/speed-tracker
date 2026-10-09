@@ -35,11 +35,17 @@ jobs:
           lipo -archs "Speed Tracker.app/Contents/MacOS/SpeedTracker"
           "Speed Tracker.app/Contents/MacOS/SpeedTracker" --diagnose 0
       - name: Package
-        run: ditto -c -k --keepParent "Speed Tracker.app" SpeedTracker-macOS.zip
+        run: |
+          # A disk image with the app beside a shortcut to Applications: open it and drag.
+          mkdir dmg
+          cp -R "Speed Tracker.app" dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Speed Tracker" -srcfolder dmg -ov -format UDZO SpeedTracker-macOS.dmg
+          hdiutil verify SpeedTracker-macOS.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: SpeedTracker-macOS
-          path: SpeedTracker-macOS.zip
+          path: SpeedTracker-macOS.dmg
           if-no-files-found: error
 
   windows:
@@ -80,21 +86,21 @@ jobs:
       - name: Check the packages
         shell: pwsh
         run: |
-          # A small download is the point of this version: fail if a package grows past 5 MB.
-          foreach ($zip in 'dist/SpeedTracker-win-x64.zip', 'dist/SpeedTracker-win-arm64.zip') {
-            $size = (Get-Item $zip).Length
-            "$zip is $size bytes"
-            if ($size -gt 5MB) { throw "$zip is larger than 5 MB" }
+          # A small download is the point of this version: fail if an exe grows past 5 MB.
+          foreach ($exe in 'dist/SpeedTracker-win-x64.exe', 'dist/SpeedTracker-win-arm64.exe') {
+            $size = (Get-Item $exe).Length
+            "$exe is $size bytes"
+            if ($size -gt 5MB) { throw "$exe is larger than 5 MB" }
           }
           # The x64 exe starts on a machine with nothing installed for it, and refuses a malformed collector launch.
-          $run = Start-Process dist/SpeedTracker-win-x64/SpeedTracker.exe -ArgumentList '--collector' -Wait -PassThru
+          $run = Start-Process dist/SpeedTracker-win-x64.exe -ArgumentList '--collector' -Wait -PassThru
           if ($run.ExitCode -ne 2) { throw "expected exit code 2, got $($run.ExitCode)" }
       - uses: actions/upload-artifact@v4
         with:
           name: SpeedTracker-Windows
           path: |
-            dist/SpeedTracker-win-x64.zip
-            dist/SpeedTracker-win-arm64.zip
+            dist/SpeedTracker-win-x64.exe
+            dist/SpeedTracker-win-arm64.exe
           if-no-files-found: error
 
   release:
@@ -113,7 +119,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" artifacts/*.zip \
+          gh release create "$GITHUB_REF_NAME" artifacts/*.dmg artifacts/*.exe \
             --repo "$GITHUB_REPOSITORY" \
             --title "Speed Tracker $GITHUB_REF_NAME" \
             --generate-notes
