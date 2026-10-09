@@ -30,17 +30,16 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW,
     DefWindowProcW, DestroyIcon, DestroyMenu, DestroyWindow, DispatchMessageW, GetCursorPos,
-    GetMessageW, GetSystemMetrics, SM_CXSMICON, KillTimer, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW,
-    SetForegroundWindow, SetTimer, TrackPopupMenu, TranslateMessage, HICON, ICONINFO, MF_SEPARATOR,
+    GetMessageW, GetSystemMetrics, SM_CXSMICON, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW,
+    SetForegroundWindow, TrackPopupMenu, TranslateMessage, HICON, ICONINFO, MF_SEPARATOR,
     MF_STRING, MSG, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP,
-    WM_CONTEXTMENU, WM_DESTROY, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WM_TIMER,
+    WM_CONTEXTMENU, WM_DESTROY, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP,
     WNDCLASSW,
 };
 
 const WM_TRAY: u32 = WM_APP + 1;
 const WM_UPDATE: u32 = WM_APP + 2;
 const WM_OPEN_DASHBOARD: u32 = WM_APP + 3;
-const CLICK_TIMER: usize = 1;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -87,8 +86,6 @@ struct App {
     notice: Mutex<Option<String>>,
     // What the icon currently shows, to avoid redundant shell calls: in flight, its number, its tooltip.
     shown: Mutex<(bool, Option<String>, String)>,
-    // The second button-up of a double-click must not also count as a click.
-    double_clicked: AtomicBool,
     exiting: AtomicBool,
     // Icons that have been replaced and not yet destroyed.
     retired: Mutex<Vec<isize>>,
@@ -113,7 +110,12 @@ impl App {
             harnesses: tracker.harnesses(),
             held_record: tracker.held_record().map(|record| (*record).clone()),
             recent: tracker
-                .recent(5, tracker.target().as_deref())
+                .recent(30, tracker.target().as_deref())
+                .iter()
+                .map(|record| (**record).clone())
+                .collect(),
+            all_recent: tracker
+                .recent(60, None)
                 .iter()
                 .map(|record| (**record).clone())
                 .collect(),
@@ -468,23 +470,14 @@ unsafe extern "system" fn window_proc(
     match message {
         WM_TRAY => match lparam as u32 {
             WM_LBUTTONUP => {
-                if !app.double_clicked.swap(false, Ordering::Relaxed) {
-                    // Wait out the double-click interval: a double-click opens the dashboard instead.
-                    SetTimer(hwnd, CLICK_TIMER, GetDoubleClickTime(), None);
-                }
+                app.toggle_live();
             }
             WM_LBUTTONDBLCLK => {
-                KillTimer(hwnd, CLICK_TIMER);
-                app.double_clicked.store(true, Ordering::Relaxed);
                 app.open_dashboard();
             }
             WM_RBUTTONUP | WM_CONTEXTMENU => app.show_menu(),
             _ => {}
         },
-        WM_TIMER if wparam == CLICK_TIMER => {
-            KillTimer(hwnd, CLICK_TIMER);
-            app.toggle_live();
-        }
         WM_UPDATE => {
             app.update_pending.store(false, Ordering::Relaxed);
             app.update_tray(false);
@@ -773,7 +766,6 @@ pub fn run(open_dashboard: bool, open_live: bool) -> i32 {
         history_revision: AtomicU64::new(0),
         notice: Mutex::new(None),
         shown: Mutex::new((false, None, String::new())),
-        double_clicked: AtomicBool::new(false),
         exiting: AtomicBool::new(false),
         retired: Mutex::default(),
     };

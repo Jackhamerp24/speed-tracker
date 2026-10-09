@@ -13,6 +13,9 @@ pub struct Snapshot {
     /// The newest few finished calls for the Live target, newest first.
     #[serde(default)]
     pub recent: Vec<RequestRecord>,
+    /// Recent finished calls across all harnesses, newest first, for the Models tab.
+    #[serde(default)]
+    pub all_recent: Vec<RequestRecord>,
     pub held_rate: Option<f64>,
     pub held_ttft: Option<f64>,
     pub held_rate_estimated: bool,
