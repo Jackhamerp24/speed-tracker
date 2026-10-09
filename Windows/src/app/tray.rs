@@ -30,7 +30,7 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW,
     DefWindowProcW, DestroyIcon, DestroyMenu, DestroyWindow, DispatchMessageW, GetCursorPos,
-    GetMessageW, KillTimer, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW,
+    GetMessageW, GetSystemMetrics, SM_CXSMICON, KillTimer, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW,
     SetForegroundWindow, SetTimer, TrackPopupMenu, TranslateMessage, HICON, ICONINFO, MF_SEPARATOR,
     MF_STRING, MSG, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP,
     WM_CONTEXTMENU, WM_DESTROY, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WM_TIMER,
@@ -77,18 +77,21 @@ struct App {
     windows: Mutex<Windows>,
     broadcast: Sender<()>,
     hwnd: AtomicIsize,
-    idle_icon: isize,
-    active_icon: isize,
+    // The notification area's icon size in pixels, and the icon now shown there.
+    icon_size: usize,
+    icon: AtomicIsize,
     taskbar_created: u32,
     update_pending: AtomicBool,
     enhanced_pending: AtomicBool,
     history_revision: AtomicU64,
     notice: Mutex<Option<String>>,
-    // What the icon currently shows, to avoid redundant shell calls.
-    shown: Mutex<(bool, String)>,
+    // What the icon currently shows, to avoid redundant shell calls: in flight, its number, its tooltip.
+    shown: Mutex<(bool, Option<String>, String)>,
     // The second button-up of a double-click must not also count as a click.
     double_clicked: AtomicBool,
     exiting: AtomicBool,
+    // Icons that have been replaced and not yet destroyed.
+    retired: Mutex<Vec<isize>>,
 }
 
 static APP: OnceLock<App> = OnceLock::new();
@@ -349,23 +352,42 @@ impl App {
         if text.chars().count() > 63 {
             text = text.chars().take(62).chain(std::iter::once('…')).collect();
         }
+        // The icon carries the same number the tooltip leads with: arriving now, or else the last reply's.
+        let number = icon_text(
+            calls
+                .iter()
+                .find_map(|call| call.rate)
+                .or(self.tracker.held_rate()),
+        );
         let mut shown = self.shown.lock().unwrap();
-        if !add && *shown == (active, text.clone()) {
+        if !add && *shown == (active, number.clone(), text.clone()) {
             return;
+        }
+        if add || (shown.0, &shown.1) != (active, &number) {
+            let icon = create_icon(
+                self.icon_size,
+                &icon_pixels(self.icon_size, active, number.as_deref()),
+            );
+            let previous = self.icon.swap(icon, Ordering::Relaxed);
+            if previous != 0 {
+                // The shell copies an icon when it is set, so the old one can go once replaced below.
+                self.retired.lock().unwrap().push(previous);
+            }
         }
         let mut data = self.icon_data();
         data.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
         data.uCallbackMessage = WM_TRAY;
-        data.hIcon = (if active {
-            self.active_icon
-        } else {
-            self.idle_icon
-        }) as HICON;
+        data.hIcon = self.icon.load(Ordering::Relaxed) as HICON;
         for (slot, unit) in data.szTip.iter_mut().zip(text.encode_utf16().take(127)) {
             *slot = unit;
         }
-        unsafe { Shell_NotifyIconW(if add { NIM_ADD } else { NIM_MODIFY }, &data) };
-        *shown = (active, text);
+        unsafe {
+            Shell_NotifyIconW(if add { NIM_ADD } else { NIM_MODIFY }, &data);
+            for icon in self.retired.lock().unwrap().drain(..) {
+                DestroyIcon(icon as HICON);
+            }
+        }
+        *shown = (active, number, text);
     }
 
     fn show_menu(&'static self) {
@@ -468,37 +490,119 @@ unsafe extern "system" fn window_proc(
     0
 }
 
-// A filled circle with three rising bars, blue while a call is in flight and grey otherwise.
-fn create_icon(active: bool) -> isize {
-    const SIZE: usize = 32;
+// What the icon says: the speed as a whole number, since three characters are all that fit.
+// None until a speed has been measured.
+pub fn icon_text(rate: Option<f64>) -> Option<String> {
+    let rate = rate.filter(|rate| rate.is_finite() && *rate >= 0.0)?.round();
+    Some(if rate < 1000.0 {
+        format!("{rate:.0}")
+    } else if rate < 99_500.0 {
+        format!("{:.0}k", rate / 1000.0)
+    } else {
+        "99k".into()
+    })
+}
+
+// Four-by-seven pixel digits and a "k", one byte per row, the leftmost pixel in bit 3. At the
+// notification area's sixteen pixels a drawn font is a smudge; this stays legible.
+fn glyph(character: char) -> [u8; 7] {
+    match character {
+        '0' => [0b0110, 0b1001, 0b1001, 0b1001, 0b1001, 0b1001, 0b0110],
+        '1' => [0b0010, 0b0110, 0b0010, 0b0010, 0b0010, 0b0010, 0b0111],
+        '2' => [0b0110, 0b1001, 0b0001, 0b0010, 0b0100, 0b1000, 0b1111],
+        '3' => [0b1110, 0b0001, 0b0001, 0b0110, 0b0001, 0b0001, 0b1110],
+        '4' => [0b0010, 0b0110, 0b1010, 0b1010, 0b1111, 0b0010, 0b0010],
+        '5' => [0b1111, 0b1000, 0b1110, 0b0001, 0b0001, 0b1001, 0b0110],
+        '6' => [0b0110, 0b1000, 0b1110, 0b1001, 0b1001, 0b1001, 0b0110],
+        '7' => [0b1111, 0b0001, 0b0010, 0b0010, 0b0100, 0b0100, 0b0100],
+        '8' => [0b0110, 0b1001, 0b1001, 0b0110, 0b1001, 0b1001, 0b0110],
+        '9' => [0b0110, 0b1001, 0b1001, 0b1001, 0b0111, 0b0001, 0b0110],
+        'k' => [0b1000, 0b1000, 0b1001, 0b1010, 0b1100, 0b1010, 0b1001],
+        _ => [0; 7],
+    }
+}
+
+/// The icon as blue, green, red, alpha bytes with colour premultiplied by alpha: blue while a call
+/// is in flight and grey otherwise, carrying the speed once one is known and three rising bars until then.
+pub fn icon_pixels(size: usize, active: bool, text: Option<&str>) -> Vec<u8> {
     let background = if active {
         [30u8, 111, 203]
     } else {
         [80, 88, 102]
     };
-    let mut pixels = vec![0u8; SIZE * SIZE * 4];
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let distance =
-                ((x as f32 + 0.5 - 16.0).powi(2) + (y as f32 + 0.5 - 16.0).powi(2)).sqrt();
-            let alpha = (15.5 - distance).clamp(0.0, 1.0);
-            let bar = [(7, 18), (14, 12), (21, 7)]
-                .iter()
-                .any(|&(left, top)| (left..left + 4).contains(&x) && (top..25).contains(&y));
-            let [red, green, blue] = if bar { [255, 255, 255] } else { background };
-            // Blue, green, red, alpha, with colour premultiplied by alpha.
-            pixels[(y * SIZE + x) * 4..][..4].copy_from_slice(&[
-                (blue as f32 * alpha) as u8,
-                (green as f32 * alpha) as u8,
-                (red as f32 * alpha) as u8,
-                (alpha * 255.0) as u8,
-            ]);
+    let mut pixels = vec![0u8; size * size * 4];
+    let mut put = |x: usize, y: usize, [red, green, blue]: [u8; 3], alpha: f32| {
+        pixels[(y * size + x) * 4..][..4].copy_from_slice(&[
+            (blue as f32 * alpha) as u8,
+            (green as f32 * alpha) as u8,
+            (red as f32 * alpha) as u8,
+            (alpha * 255.0) as u8,
+        ]);
+    };
+    let Some(text) = text else {
+        // A filled circle with three rising bars, drawn on a 32-pixel grid and scaled to the icon.
+        let scale = size as f32 / 32.0;
+        for y in 0..size {
+            for x in 0..size {
+                let (gx, gy) = ((x as f32 + 0.5) / scale, (y as f32 + 0.5) / scale);
+                let distance = ((gx - 16.0).powi(2) + (gy - 16.0).powi(2)).sqrt();
+                let alpha = ((15.5 - distance) * scale).clamp(0.0, 1.0);
+                let bar = [(7.0, 18.0), (14.0, 12.0), (21.0, 7.0)]
+                    .iter()
+                    .any(|&(left, top)| (left..left + 4.0).contains(&gx) && (top..25.0).contains(&gy));
+                put(x, y, if bar { [255, 255, 255] } else { background }, alpha);
+            }
+        }
+        return pixels;
+    };
+    // A full square with clipped corners gives the digits every pixel of width there is.
+    let corner = (size / 8).max(1);
+    for y in 0..size {
+        for x in 0..size {
+            let (edge_x, edge_y) = (x.min(size - 1 - x), y.min(size - 1 - y));
+            if edge_x + edge_y >= corner {
+                put(x, y, background, 1.0);
+            }
         }
     }
-    let mask = vec![0u8; SIZE * SIZE / 8];
+    let count = text.chars().count().min(3);
+    // Each digit is four units wide with one between, and seven tall. The units are as large as the
+    // icon allows, and up to twice as tall as wide: at sixteen pixels that is what makes three digits readable.
+    let wide = (size / (count * 5 - 1)).min((size - 2) / 7).max(1);
+    let tall = ((size - 2) / 7).min(2 * wide).max(1);
+    let (left, top) = (
+        size.saturating_sub((count * 5 - 1) * wide) / 2,
+        size.saturating_sub(7 * tall) / 2,
+    );
+    for (index, character) in text.chars().take(3).enumerate() {
+        for (row, bits) in glyph(character).iter().enumerate() {
+            for column in 0..4 {
+                if bits & (0b1000 >> column) == 0 {
+                    continue;
+                }
+                for dy in 0..tall {
+                    for dx in 0..wide {
+                        let (x, y) = (
+                            left + (index * 5 + column) * wide + dx,
+                            top + row * tall + dy,
+                        );
+                        if x < size && y < size {
+                            put(x, y, [255, 255, 255], 1.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pixels
+}
+
+fn create_icon(size: usize, pixels: &[u8]) -> isize {
+    // One bit a pixel, each row padded to a whole number of 16-bit words. All zero: alpha decides.
+    let mask = vec![0u8; size.div_ceil(16) * 2 * size];
     unsafe {
-        let color = CreateBitmap(SIZE as i32, SIZE as i32, 1, 32, pixels.as_ptr().cast());
-        let mask = CreateBitmap(SIZE as i32, SIZE as i32, 1, 1, mask.as_ptr().cast());
+        let color = CreateBitmap(size as i32, size as i32, 1, 32, pixels.as_ptr().cast());
+        let mask = CreateBitmap(size as i32, size as i32, 1, 1, mask.as_ptr().cast());
         let icon = CreateIconIndirect(&ICONINFO {
             fIcon: 1,
             xHotspot: 0,
@@ -510,6 +614,54 @@ fn create_icon(active: bool) -> isize {
         DeleteObject(mask);
         icon as isize
     }
+}
+
+/// `--icon-preview FILE.png`: every state of the tray icon at the three sizes Windows uses, each also
+/// enlarged, so a change to it can be looked at without hunting for it in the notification area.
+pub fn icon_preview(path: &str) -> i32 {
+    let states: [(bool, Option<&str>); 6] = [
+        (false, None),
+        (true, None),
+        (false, Some("87")),
+        (true, Some("121")),
+        (true, Some("5")),
+        (false, Some("1k")),
+    ];
+    let sizes = [16usize, 24, 32];
+    const ZOOM: usize = 6;
+    let cell = 32 * ZOOM + 16;
+    let mut sheet = image::RgbaImage::from_pixel(
+        (cell * states.len()) as u32,
+        (cell * sizes.len() * 2) as u32,
+        image::Rgba([32, 34, 38, 255]),
+    );
+    for (row, size) in sizes.iter().enumerate() {
+        for (column, (active, text)) in states.iter().enumerate() {
+            let pixels = icon_pixels(*size, *active, *text);
+            for zoom in [1, ZOOM] {
+                let top = (row * 2 + usize::from(zoom == ZOOM)) * cell + 8;
+                for y in 0..*size {
+                    for x in 0..*size {
+                        let [blue, green, red, alpha] =
+                            <[u8; 4]>::try_from(&pixels[(y * size + x) * 4..][..4]).unwrap();
+                        if alpha == 0 {
+                            continue;
+                        }
+                        for dy in 0..zoom {
+                            for dx in 0..zoom {
+                                sheet.put_pixel(
+                                    (column * cell + 8 + x * zoom + dx) as u32,
+                                    (top + y * zoom + dy) as u32,
+                                    image::Rgba([red, green, blue, 255]),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    i32::from(sheet.save(path).is_err())
 }
 
 // config.json: the proxy's port and any extra routes. Property names match in any letter case.
@@ -602,16 +754,17 @@ pub fn run(open_dashboard: bool, open_live: bool) -> i32 {
         windows: Mutex::default(),
         broadcast,
         hwnd: AtomicIsize::new(hwnd as isize),
-        idle_icon: create_icon(false),
-        active_icon: create_icon(true),
+        icon_size: (unsafe { GetSystemMetrics(SM_CXSMICON) }.max(16)) as usize,
+        icon: AtomicIsize::new(0),
         taskbar_created: unsafe { RegisterWindowMessageW(wide("TaskbarCreated").as_ptr()) },
         update_pending: AtomicBool::new(false),
         enhanced_pending: AtomicBool::new(false),
         history_revision: AtomicU64::new(0),
         notice: Mutex::new(None),
-        shown: Mutex::new((false, String::new())),
+        shown: Mutex::new((false, None, String::new())),
         double_clicked: AtomicBool::new(false),
         exiting: AtomicBool::new(false),
+        retired: Mutex::default(),
     };
     if APP.set(state).is_err() {
         return 1;
@@ -695,10 +848,57 @@ pub fn run(open_dashboard: bool, open_live: bool) -> i32 {
     app.enhanced.disable();
     tracker.dispose();
     proxy.stop();
-    unsafe {
-        DestroyIcon(app.idle_icon as HICON);
-        DestroyIcon(app.active_icon as HICON);
-    }
+    unsafe { DestroyIcon(app.icon.load(Ordering::Relaxed) as HICON) };
     drop(instance);
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{icon_pixels, icon_text};
+
+    #[test]
+    fn the_icon_shows_the_speed_as_a_whole_number_of_at_most_three_characters() {
+        assert_eq!(icon_text(Some(87.4)).as_deref(), Some("87"));
+        assert_eq!(icon_text(Some(120.6)).as_deref(), Some("121"));
+        assert_eq!(icon_text(Some(0.2)).as_deref(), Some("0"), "a measured crawl is a number, not a blank");
+        assert_eq!(icon_text(Some(999.4)).as_deref(), Some("999"));
+        assert_eq!(icon_text(Some(999.6)).as_deref(), Some("1k"), "what rounds to a thousand no longer fits as digits");
+        assert_eq!(icon_text(Some(2400.0)).as_deref(), Some("2k"));
+        assert_eq!(icon_text(Some(12_345.0)).as_deref(), Some("12k"));
+        assert_eq!(icon_text(Some(5_000_000.0)).as_deref(), Some("99k"), "never more than three characters");
+    }
+
+    #[test]
+    fn with_no_usable_speed_the_icon_shows_no_number() {
+        for rate in [None, Some(f64::NAN), Some(f64::INFINITY), Some(-1.0)] {
+            assert_eq!(icon_text(rate), None, "{rate:?}");
+        }
+    }
+
+    // Blue, green, red, alpha at one pixel.
+    fn pixel(pixels: &[u8], size: usize, x: usize, y: usize) -> [u8; 4] {
+        pixels[(y * size + x) * 4..][..4].try_into().unwrap()
+    }
+
+    #[test]
+    fn at_sixteen_pixels_three_digits_fill_the_icon_two_pixels_tall_per_row() {
+        // "111" at 16 px: units 1 wide and 2 tall, so the text is 14 x 14 starting at (1, 1). The top
+        // row of a "1" is 0010: its only lit pixel is the third column, x = 1 + 2 for the first digit.
+        let pixels = icon_pixels(16, true, Some("111"));
+        assert_eq!(pixel(&pixels, 16, 3, 1), [255, 255, 255, 255], "the digit is white");
+        assert_eq!(pixel(&pixels, 16, 3, 2), [255, 255, 255, 255], "and each row is two pixels tall");
+        assert_eq!(pixel(&pixels, 16, 1, 1), [203, 111, 30, 255], "beside it is the in-flight blue");
+        assert_eq!(pixel(&pixels, 16, 0, 0), [0, 0, 0, 0], "the corner is clipped");
+        assert_eq!(pixel(&icon_pixels(16, false, Some("111")), 16, 1, 1), [102, 88, 80, 255], "grey when no call is in flight");
+    }
+
+    #[test]
+    fn every_size_and_length_draws_inside_the_icon() {
+        for size in 16..=64 {
+            for text in [None, Some("5"), Some("87"), Some("121"), Some("12k"), Some("1234")] {
+                assert_eq!(icon_pixels(size, size % 2 == 0, text).len(), size * size * 4, "{size} px, {text:?}");
+            }
+        }
+    }
 }
