@@ -9,7 +9,7 @@
 
 Không cần cài đặt gì thêm. Mở app, dùng coding agent như bình thường, và số liệu tự hiện ra. App đọc những gì agent đã tự ghi xuống đĩa và quan sát hoạt động mạng của nó. App không bao giờ sửa cấu hình của agent, và không lưu lại prompt hay câu trả lời nào của bạn.
 
-macOS là nền tảng chính. Bản Windows 11 có kèm theo và đang ở mức thử nghiệm (xem [Windows](#windows)).
+macOS là nền tảng chính. Bản Windows 11 có kèm theo: chỉ một tệp khoảng 3 MB, không cần cài đặt gì (xem [Windows](#windows)).
 
 | Live | Chọn harness để theo dõi | Dashboard |
 | --- | --- | --- |
@@ -79,9 +79,11 @@ Một biểu tượng tia chớp sẽ hiện trên thanh menu. Lần đầu ch�
 
 Cần Windows 11, x64 hoặc ARM64.
 
-1. Tải `SpeedTracker-win-x64.zip` hoặc `SpeedTracker-win-arm64.zip` từ [bản phát hành mới nhất](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
-2. Giải nén toàn bộ và chạy `SpeedTracker.exe`. Không cần cài thêm gì.
+1. Tải `SpeedTracker-win-x64.zip` hoặc `SpeedTracker-win-arm64.zip` (khoảng 1,5 MB) từ [bản phát hành mới nhất](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
+2. Giải nén và chạy `SpeedTracker.exe`. Tệp đó là toàn bộ app; không cần cài thêm gì.
 3. App chưa được ký nên SmartScreen có thể cảnh báo: chọn **More info**, rồi **Run anyway**.
+
+Một biểu tượng sẽ hiện ở khay hệ thống (lúc đầu có thể nằm trong phần biểu tượng ẩn). Muốn thoát, bấm chuột phải vào biểu tượng.
 
 ## Cách dùng
 
@@ -137,11 +139,16 @@ Proxy chỉ lắng nghe trên loopback, từ chối yêu cầu có header `Origi
 
 ## Windows
 
-Bản Windows dùng chung quy tắc đo và định dạng lịch sử với macOS, nhưng là một bản cài đặt riêng viết bằng C#.
+Bản Windows dùng chung quy tắc đo và định dạng lịch sử với macOS. Đây là một bản cài đặt riêng viết bằng Rust: chỉ một tệp khoảng 3 MB, dùng SQLite và TLS có sẵn trong Windows.
 
-- **Không cần quyền quản trị**, app đọc dữ liệu phiên của harness, tức là đủ cho mọi harness trong bảng đầu tiên ở trên.
-- **Đo thời gian qua mạng** cần bộ thu tuỳ chọn, và nó chỉ xin quyền quản trị khi bạn bật lên. Không bật thì các harness không có dữ liệu phiên sẽ không được đo.
-- **Tình trạng: thử nghiệm.** Test đều qua và các gói được build trên CI, nhưng khay hệ thống, các cửa sổ và bộ thu chưa được kiểm tra bằng tay trên máy Windows. Rất mong bạn báo lại nếu gặp lỗi.
+![Cửa sổ Live trên Windows](docs/images/windows-live.png)
+
+*Dữ liệu mẫu.*
+
+- **Biểu tượng ở khay hệ thống.** Màu xanh khi đang có câu trả lời được tạo, màu xám khi không. Rê chuột để xem tốc độ mới nhất, bấm để mở cửa sổ Live, bấm đúp để mở dashboard. Nút **Keep open** giữ cửa sổ Live trên màn hình khi bạn làm việc ở cửa sổ khác.
+- **Không cần quyền quản trị**, app đọc dữ liệu phiên của harness, tức là đủ cho mọi harness trong bảng đầu tiên ở trên. Harness chỉ ghi dữ liệu đó khi câu trả lời hoàn tất, nên tốc độ và TTFT hiện ra mỗi khi một câu trả lời kết thúc; trong lúc chờ, Live cho biết đang có câu trả lời được tạo và đã bao lâu, đồng thời giữ tốc độ gần nhất chứ không tụt về 0.
+- **Tốc độ trong lúc câu trả lời còn đang truyền về** cần bộ thu mạng tuỳ chọn (mục Settings trong cửa sổ Live). Windows chỉ cho quản trị viên đọc bộ đếm byte theo từng kết nối, nên app sẽ xin phép khi bạn bật lên. Bộ thu này cũng đo các harness không có dữ liệu phiên.
+- **Tình trạng.** Test và cả hai gói đều được build trên CI. Trên một máy Windows 11 x64, khay hệ thống, cửa sổ Live và dashboard đã được chạy với các phiên thật của Claude Code, Codex, OMP và DeepSeek CLI. Bộ thu mạng, bản ARM64 và chế độ tương phản cao chưa được kiểm tra bằng tay. Rất mong bạn báo lại nếu gặp lỗi.
 
 ## Giới hạn
 
@@ -161,14 +168,14 @@ Bản Windows dùng chung quy tắc đo và định dạng lịch sử với mac
 ./Scripts/test.sh
 ```
 
-**Windows** cần .NET 8 SDK.
+**Windows** cần [Rust](https://rustup.rs) và Visual Studio C++ Build Tools. Nếu không có Visual Studio, chạy `.\Scripts\setup_windows_gnu.ps1` một lần để Rust tự liên kết được.
 
 ```powershell
 .\Scripts\build_windows.ps1 -Runtime win-x64
 ```
 
 ```powershell
-dotnet run --project Windows/SpeedTracker.Smoke/SpeedTracker.Smoke.csproj -c Release
+cd Windows; cargo test
 ```
 
 Để xem app phát hiện được gì trên máy Mac:
@@ -185,7 +192,7 @@ GitHub Actions build và test cả hai app mỗi lần push. Push một tag như
 Sources/SpeedTrackerCore   phát hiện, đọc phiên, theo dõi luồng mạng, lịch sử, phân tích dashboard (không có UI)
 Sources/SpeedTracker       app thanh menu và dashboard cho macOS
 Tests/                     test cho macOS
-Windows/                   lõi Windows, app, bộ thu và proxy tuỳ chọn, test
+Windows/                   app Windows viết bằng Rust: lõi, khay hệ thống, cửa sổ, bộ thu và proxy tuỳ chọn, test
 Scripts/                   script build và test
 AGENTS.md                  ghi chú cho người đóng góp và coding agent: định dạng, quyết định, cạm bẫy
 ```

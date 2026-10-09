@@ -1,0 +1,61 @@
+[package]
+name = "speedtracker"
+version = "0.2.0"
+edition = "2021"
+description = "Speed Tracker for Windows: live TTFT and tokens per second for coding agents"
+publish = false
+
+[lib]
+name = "speedtracker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "SpeedTracker"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+indexmap = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+url = "2"
+# Pure-Rust Zstandard decoder: DeepSeek session logs are read, never written.
+ruzstd = "0.8"
+httparse = "1"
+# The optional proxy's upstream client. TLS comes from Windows (SChannel), so no C toolchain is needed.
+ureq = { version = "2", default-features = false, features = ["native-tls"] }
+native-tls = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+eframe = { version = "0.31", default-features = false, features = ["glow", "accesskit"] }
+# Only to write the PNG for `--screenshot`; eframe already builds this crate.
+image = { version = "0.25", default-features = false, features = ["png"] }
+egui_extras = { version = "0.31", default-features = false, features = ["datepicker"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_IO",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Pipes",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Accessibility",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
