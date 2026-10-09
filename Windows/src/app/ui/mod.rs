@@ -105,10 +105,13 @@ impl Link {
 pub struct Palette {
     pub background: Color32,
     pub panel: Color32,
+    pub panel_raised: Color32,
     pub foreground: Color32,
     pub muted: Color32,
     pub border: Color32,
+    pub divider: Color32,
     pub accent: Color32,
+    pub accent_soft: Color32,
     pub secondary: Color32,
 }
 
@@ -142,35 +145,48 @@ pub fn palette(dark: bool) -> Palette {
         return Palette {
             background: back,
             panel: back,
+            panel_raised: back,
             foreground: fore,
             muted: fore,
             border: fore,
+            divider: fore,
             accent: if dark {
                 rgb(0x1A, 0xEB, 0xFF)
             } else {
                 rgb(0x00, 0x37, 0xDA)
+            },
+            accent_soft: if dark {
+                Color32::from_rgba_unmultiplied(0x1A, 0xEB, 0xFF, 40)
+            } else {
+                Color32::from_rgba_unmultiplied(0x00, 0x37, 0xDA, 40)
             },
             secondary: fore,
         };
     }
     if dark {
         Palette {
-            background: rgb(0x17, 0x19, 0x1D),
-            panel: rgb(0x23, 0x26, 0x2C),
-            foreground: rgb(0xF3, 0xF4, 0xF6),
-            muted: rgb(0xB8, 0xBF, 0xCC),
-            border: rgb(0x44, 0x4A, 0x55),
-            accent: rgb(0x76, 0xB8, 0xFF),
+            background: rgb(0x18, 0x1A, 0x1E),
+            panel: rgb(0x22, 0x25, 0x2B),
+            panel_raised: rgb(0x2B, 0x2E, 0x36),
+            foreground: rgb(0xF4, 0xF5, 0xF7),
+            muted: rgb(0x8E, 0x95, 0xA3),
+            border: rgb(0x34, 0x39, 0x44),
+            divider: rgb(0x2B, 0x2F, 0x38),
+            accent: rgb(0x21, 0xC6, 0x8F), // Signature Speed Tracker green accent
+            accent_soft: Color32::from_rgba_unmultiplied(0x21, 0xC6, 0x8F, 38),
             secondary: rgb(0xF6, 0xBA, 0x73),
         }
     } else {
         Palette {
-            background: rgb(0xF4, 0xF5, 0xF7),
+            background: rgb(0xEE, 0xF0, 0xF3),
             panel: rgb(0xFF, 0xFF, 0xFF),
-            foreground: rgb(0x19, 0x1C, 0x22),
-            muted: rgb(0x59, 0x61, 0x71),
-            border: rgb(0xD4, 0xD9, 0xE2),
-            accent: rgb(0x14, 0x6A, 0xC8),
+            panel_raised: rgb(0xF4, 0xF5, 0xF8),
+            foreground: rgb(0x18, 0x1A, 0x20),
+            muted: rgb(0x6A, 0x72, 0x82),
+            border: rgb(0xDB, 0xDF, 0xE7),
+            divider: rgb(0xE6, 0xEA, 0xF0),
+            accent: rgb(0x14, 0xA2, 0x72),
+            accent_soft: Color32::from_rgba_unmultiplied(0x14, 0xA2, 0x72, 30),
             secondary: rgb(0xA7, 0x58, 0x05),
         }
     }
@@ -178,6 +194,21 @@ pub fn palette(dark: bool) -> Palette {
 
 pub fn colors(ui: &Ui) -> Palette {
     palette(ui.visuals().dark_mode)
+}
+
+/// Brand colors for each supported harness matching the macOS version.
+pub fn harness_color(harness: &str) -> Color32 {
+    match harness {
+        "Claude Code" | "Claude Desktop" => Color32::from_rgb(232, 122, 79), // Terracotta / warm orange
+        "Codex" => Color32::from_rgb(51, 196, 143),                          // Emerald green
+        "OMP" => Color32::from_rgb(171, 125, 245),                           // Violet purple
+        "Pi" => Color32::from_rgb(105, 142, 250),                            // Soft blue
+        "Gemini CLI" => Color32::from_rgb(74, 156, 250),                     // Gemini blue
+        "Antigravity" => Color32::from_rgb(237, 92, 120),                    // Coral pink
+        "DeepSeek CLI" => Color32::from_rgb(92, 128, 255),                  // Royal blue
+        "opencode" => Color32::from_rgb(143, 161, 184),                      // Slate blue
+        _ => Color32::from_rgb(51, 196, 143),
+    }
 }
 
 // Segoe UI from the system, so nothing is bundled and text looks like the rest of Windows.
@@ -276,10 +307,74 @@ pub fn card<R>(ui: &mut Ui, padding: i8, contents: impl FnOnce(&mut Ui) -> R) ->
     Frame::new()
         .fill(colors.panel)
         .stroke(Stroke::new(1.0_f32, colors.border))
-        .corner_radius(CornerRadius::same(8))
+        .corner_radius(CornerRadius::same(12))
         .inner_margin(Margin::same(padding))
         .show(ui, contents)
         .inner
+}
+
+/// A bordered panel with custom corner radius and fill.
+pub fn card_styled<R>(
+    ui: &mut Ui,
+    padding: i8,
+    radius: u8,
+    fill: Color32,
+    border: Color32,
+    contents: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    Frame::new()
+        .fill(fill)
+        .stroke(Stroke::new(1.0_f32, border))
+        .corner_radius(CornerRadius::same(radius))
+        .inner_margin(Margin::same(padding))
+        .show(ui, contents)
+        .inner
+}
+
+/// Upper-cased bold section label with muted styling matching macOS SectionLabel.
+pub fn section_label(ui: &mut Ui, content: &str) -> egui::Response {
+    let colors = colors(ui);
+    ui.label(
+        RichText::new(content.to_uppercase())
+            .size(10.0)
+            .strong()
+            .color(colors.muted),
+    )
+}
+
+/// Paints the vector lightning bolt icon into the given rect.
+pub fn paint_lightning_bolt(painter: &egui::Painter, rect: egui::Rect, color: Color32) {
+    let p = |rx: f32, ry: f32| egui::pos2(rect.left() + rect.width() * rx, rect.top() + rect.height() * ry);
+    let points = vec![
+        p(0.56, 0.08),
+        p(0.20, 0.54),
+        p(0.48, 0.54),
+        p(0.38, 0.92),
+        p(0.80, 0.44),
+        p(0.52, 0.44),
+    ];
+    painter.add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
+}
+
+/// Paints the radar scope target icon for Watching.
+pub fn paint_scope_icon(painter: &egui::Painter, center: egui::Pos2, radius: f32, color: Color32) {
+    painter.circle_stroke(center, radius, Stroke::new(1.3_f32, color));
+    painter.circle_filled(center, radius * 0.32, color);
+    let r_out = radius * 1.45;
+    let r_in = radius * 0.85;
+    painter.line_segment([center - egui::vec2(0.0, r_out), center - egui::vec2(0.0, r_in)], Stroke::new(1.3_f32, color));
+    painter.line_segment([center + egui::vec2(0.0, r_in), center + egui::vec2(0.0, r_out)], Stroke::new(1.3_f32, color));
+    painter.line_segment([center - egui::vec2(r_out, 0.0), center - egui::vec2(r_in, 0.0)], Stroke::new(1.3_f32, color));
+    painter.line_segment([center + egui::vec2(r_in, 0.0), center + egui::vec2(r_out, 0.0)], Stroke::new(1.3_f32, color));
+}
+
+/// Paints a colored dot for a harness.
+#[allow(dead_code)]
+pub fn harness_dot(ui: &mut Ui, harness: &str, radius: f32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(radius * 2.0, radius * 2.0), egui::Sense::hover());
+    let color = harness_color(harness);
+    ui.painter().circle_filled(rect.center(), radius, color);
+    response
 }
 
 pub mod format {
@@ -351,6 +446,7 @@ pub mod format {
     pub const SHORT: &str = "%Y-%m-%d %H:%M";
 
     /// How long something has been going on: seconds, then minutes and seconds.
+    #[allow(dead_code)]
     pub fn elapsed(seconds: f64) -> String {
         let seconds = seconds.max(0.0) as u64;
         if seconds < 60 {
@@ -369,6 +465,44 @@ pub mod format {
             60..=3599 => format!("{} min ago", seconds / 60),
             3600..=86_399 => format!("{} h ago", seconds / 3600),
             _ => format!("{} d ago", seconds / 86_400),
+        }
+    }
+
+    /// Short relative time for compact rows: 40s, 3m, 25m, 1h, 3d.
+    pub fn ago_compact(seconds: f64) -> String {
+        let seconds = seconds.max(0.0) as u64;
+        match seconds {
+            0..=1 => "just now".into(),
+            2..=59 => format!("{seconds}s"),
+            60..=3599 => format!("{}m", seconds / 60),
+            3600..=86_399 => format!("{}h", seconds / 3600),
+            _ => format!("{}d", seconds / 86_400),
+        }
+    }
+
+    /// Latency formatted as ms below 1s and s above, or "—".
+    pub fn latency_compact(seconds: Option<f64>) -> String {
+        match seconds.filter(|s| s.is_finite() && *s >= 0.0) {
+            Some(s) if s < 1.0 => format!("{:.0} ms", (s * 1000.0).max(0.0)),
+            Some(s) => format!("{:.2} s", s),
+            None => "—".into(),
+        }
+    }
+
+    /// Returns value and unit separated for metric tiles, e.g. ("930", "ms") or ("1.05", "s").
+    pub fn duration_parts(seconds: f64) -> (String, &'static str) {
+        if seconds < 1.0 {
+            (format!("{:.0}", (seconds * 1000.0).max(0.0)), "ms")
+        } else {
+            (format!("{:.2}", seconds), "s")
+        }
+    }
+
+    /// Whole rate e.g. "68" or "~68".
+    pub fn rate_whole(value: Option<f64>, estimated: bool) -> String {
+        match value.filter(|number| number.is_finite() && *number >= 0.0) {
+            Some(number) => format!("{}{:.0}", if estimated { "~" } else { "" }, number.round()),
+            None => "—".into(),
         }
     }
 }
@@ -438,53 +572,63 @@ fn demo(kind: &str) -> Snapshot {
             ..RequestRecord::default()
         }
     };
-    let recent = vec![
-        reply("Claude Code", "claude-opus-5-5", 6.0, 1.84, 12.6, 1512),
-        reply("Claude Code", "claude-opus-5-5", 31.0, 2.07, 8.1, 934),
-        reply("Codex", "gpt-5.5-codex", 95.0, 0.92, 5.4, 611),
-        reply("Claude Code", "claude-haiku-5-5", 140.0, 0.61, 2.2, 418),
-        reply("OMP", "deepseek-reasoner", 420.0, 3.35, 21.0, 1890),
+    let all_recent = vec![
+        reply("Claude Code", "claude-opus-5-5", 40.0, 1.42, 12.6, 862),
+        reply("Codex", "gpt-6.1-sol", 180.0, 0.88, 5.4, 767),
+        reply("DeepSeek CLI", "deepseek-reasoner", 780.0, 2.31, 21.0, 729),
+        reply("Claude Code", "claude-haiku-4-5-20251001", 1500.0, 0.41, 2.2, 376),
+        reply("OMP", "gpt-6-astra", 3600.0, 0.93, 8.2, 1082),
     ];
+    let recent = all_recent.clone();
     let call = |phase: &str, rate: Option<f64>| LiveCall {
         id: "demo".into(),
         harness: "Claude Code".into(),
         model: "claude-opus-5-5".into(),
         provider: "anthropic".into(),
         phase: phase.into(),
-        started_at: now.add_seconds(-7.4),
+        started_at: now.add_seconds(-11.0),
         last_activity: now,
-        ttft: rate.map(|_| 1.62),
+        ttft: Some(1.31),
         rate,
-        output_tokens: rate.map(|_| 655),
-        estimated: rate.is_some(),
+        output_tokens: rate.map(|_| 638),
+        estimated: true,
     };
     let streaming = kind == "streaming";
+    let waiting = kind == "waiting";
     Snapshot {
-        active: match kind {
-            "waiting" => vec![call("Waiting", None)],
-            "streaming" => vec![call("Streaming · network estimate", Some(113.4))],
-            _ => Vec::new(),
+        active: if streaming {
+            vec![call("Streaming · network estimate", Some(68.0))]
+        } else if waiting {
+            vec![call("Waiting for first token", None)]
+        } else {
+            Vec::new()
         },
-        harnesses: ["Claude Code", "Codex", "OMP"]
-            .iter()
-            .map(|name| HarnessStatus {
-                name: name.to_string(),
-                has_logs: true,
-                is_running: *name != "OMP",
-                limitation: None,
-                is_installed: true,
-            })
-            .collect(),
-        held_rate: recent[0].tps,
-        held_ttft: recent[0].ttft,
-        held_record: Some(recent[0].clone()),
+        harnesses: [
+            ("Claude Code", true, true),
+            ("Codex", true, true),
+            ("OMP", true, false),
+            ("DeepSeek CLI", true, false),
+        ]
+        .iter()
+        .map(|&(name, has_logs, is_running)| HarnessStatus {
+            name: name.to_string(),
+            has_logs,
+            is_running,
+            limitation: None,
+            is_installed: true,
+        })
+        .collect(),
+        held_rate: Some(68.4),
+        held_ttft: Some(1.31),
+        held_record: Some(all_recent[0].clone()),
         recent,
+        all_recent,
         network_status: if streaming {
             "Passive TCP byte counters".into()
         } else {
             "Standard-user log-first tracking. Enhanced network collection is off.".into()
         },
-        enhanced_available: streaming,
+        enhanced_available: true,
         enhanced_enabled: streaming,
         ..Snapshot::default()
     }
