@@ -47,17 +47,48 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - name: Show toolchain
+        run: |
+          rustc --version
+          cargo --version
+      - uses: actions/cache@v4
         with:
-          dotnet-version: 8.0.x
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+          key: windows-cargo-${{ hashFiles('Windows/Cargo.lock') }}
       - name: Test
-        run: dotnet run --project Windows/SpeedTracker.Smoke/SpeedTracker.Smoke.csproj -c Release
+        shell: pwsh
+        working-directory: Windows
+        run: |
+          cargo test --locked | Tee-Object -FilePath test.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Green must mean the whole suite ran: count what did, and refuse a run that skipped any.
+          $results = Select-String -Path test.log -Pattern 'test result: ok\. (\d+) passed; 0 failed; (\d+) ignored'
+          $passed = ($results | ForEach-Object { [int]$_.Matches[0].Groups[1].Value } | Measure-Object -Sum).Sum
+          $ignored = ($results | ForEach-Object { [int]$_.Matches[0].Groups[2].Value } | Measure-Object -Sum).Sum
+          "$passed tests passed, $ignored ignored"
+          if ($ignored -ne 0) { throw "$ignored tests were ignored" }
+          # Lower this only when tests are removed on purpose.
+          if ($passed -lt 110) { throw "only $passed tests ran; at least 110 are expected" }
       - name: Build x64
         shell: pwsh
         run: ./Scripts/build_windows.ps1 -Runtime win-x64
       - name: Build ARM64
         shell: pwsh
         run: ./Scripts/build_windows.ps1 -Runtime win-arm64
+      - name: Check the packages
+        shell: pwsh
+        run: |
+          # A small download is the point of this version: fail if a package grows past 5 MB.
+          foreach ($zip in 'dist/SpeedTracker-win-x64.zip', 'dist/SpeedTracker-win-arm64.zip') {
+            $size = (Get-Item $zip).Length
+            "$zip is $size bytes"
+            if ($size -gt 5MB) { throw "$zip is larger than 5 MB" }
+          }
+          # The x64 exe starts on a machine with nothing installed for it, and refuses a malformed collector launch.
+          $run = Start-Process dist/SpeedTracker-win-x64/SpeedTracker.exe -ArgumentList '--collector' -Wait -PassThru
+          if ($run.ExitCode -ne 2) { throw "expected exit code 2, got $($run.ExitCode)" }
       - uses: actions/upload-artifact@v4
         with:
           name: SpeedTracker-Windows

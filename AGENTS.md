@@ -4,7 +4,7 @@ Guide for an agent picking up this project. `README.md` is the user-facing descr
 
 ## What this is
 
-Speed Tracker is a macOS menu bar app that shows how fast the model behind a coding harness is responding: **TTFT** (time to first token) and **speed** (output tokens per second). It works for Claude Code, Codex, OMP and other harnesses without the user configuring anything.
+Speed Tracker is a macOS menu bar app that shows how fast the model behind a coding harness is responding: **TTFT** (time to first token) and **speed** (output tokens per second). It works for Claude Code, Codex, OMP and other harnesses without the user configuring anything. There is also a Windows tray app, written in Rust; its notes are in the last section, "Windows app in Rust".
 
 It is modelled on [CodexBar](https://github.com/steipete/CodexBar): menu bar live status with an optional dashboard window for historical inspection.
 ## Requirements the owner has stated
@@ -73,11 +73,8 @@ Sources/SpeedTracker             menu-bar app plus dashboard window
   Diagnose.swift                 detection diagnostics
 Tests/SpeedTrackerCoreTests      117 Core tests
 Scripts/                         build, test, icon and proxy smoke scripts
-Windows/SpeedTracker.Core        .NET8 telemetry/history/analytics and flow state
-Windows/SpeedTracker.Windows     WPF dashboard, tray/flyout, single-instance entry
-Windows/SpeedTracker.Collector   explicitly elevated IP Helper TCP-counter process
-Windows/SpeedTracker.Proxy       optional local reverse proxy and stream meter
-Windows/SpeedTracker.Smoke       executable behavior, flow, harness and proxy regressions
+Windows/Cargo.toml, src, tests   the Windows app, in Rust; see "Windows app in Rust" at the end
+Windows/SpeedTracker.*           the earlier C# version: no longer built or shipped, awaiting removal
 ```
 
 Two things are easy to confuse: `HarnessCatalog` classifies a **process** (automatic detection); `HarnessDetector` classifies a **User-Agent** (proxy only).
@@ -352,3 +349,101 @@ Be honest about these when reporting, and verify them if you touch the area.
 - New Core behaviour gets a test in `Tests/SpeedTrackerCoreTests`, with fixtures shaped like the real log lines or traffic.
 - User-visible estimates carry `~`. Do not present an estimate as a measurement.
 - Before telling the owner something works, run it: tests, a snapshot, and a trace of the live app where the change is behavioural.
+
+## Windows app in Rust (shipping from 2026-10-10)
+
+Owner request: make the Windows download as light as possible; the C# release zip was about 112 MiB because it carried two .NET runtimes, WPF and ASP.NET Core. The Windows app is now Rust: one `SpeedTracker.exe`, **2.75 MB, 1.38 MB zipped** (x64 release, measured on this Windows 11 PC). CI tests and packages it; `Scripts/build_windows.ps1` builds it.
+
+**Where this replaces older text in this file.** Everything above that describes the Windows version as C#/.NET/WPF (the Layout block, Phase 3, the handoff, the `dotnet` commands, "smoke checks" and "parity checks") is history. The semantics it describes still hold; the code is the Rust port. The C# projects (`Windows/SpeedTracker.*`) and `Scripts/build_windows.sh` are **still in the tree but are no longer built, tested or shipped**: removing them was blocked by the agent's permission system on 2026-10-10 and is left to the owner (`git rm -r Windows/SpeedTracker.Collector Windows/SpeedTracker.Core Windows/SpeedTracker.Proxy Windows/SpeedTracker.Smoke Windows/SpeedTracker.Windows Scripts/build_windows.sh`). Do not edit them, and do not keep them in step with the Rust code.
+
+### What Live can and cannot show on Windows
+
+The owner ran the first Rust build and reported that it "does not actually track your speed at all". Finished calls were being recorded; the Live view just had nothing to show during a call. What was measured while fixing that (2026-10-10, Claude Code 2.1.293 in the Claude desktop app):
+
+- **Claude Code writes a whole reply to its session log in one go, about half a second after the reply ends.** Every block's line, and any tool results that came back while it streamed, land in a single write. A thinking line stamped 06.540 reached the file at 11.456 with the rest of its message. So the log says "a reply is due" (a prompt or tool result with no reply after it) and, once it is over, exactly what it measured. It never says how fast a reply is arriving. This is also why every line carries the final `usage`.
+- **Per-process I/O counters do not include socket traffic.** `GetProcessIoCounters` showed 0 read bytes and about 1 KB "other" for a 5 MB download by `curl`. Only operation counts move. There is no unprivileged per-connection byte counter on Windows: `GetPerTcpConnectionEStats` and ETW need an administrator. Do not try this route again.
+- So, **without elevation, speed and TTFT appear when each reply completes** (about a second later), and in between Live shows "reply in progress" with a timer and holds the last speed. **Speed during a reply needs the optional elevated collector.**
+
+What was changed:
+
+- `ClaudeCodeLogParser` finalises a message after **one second** of quiet, not three (the batch write makes that safe; the Swift parser still uses three and has network flow for its live view).
+- A Claude Code `user` line is a request only if a reply follows it. `starts_request` rules out `isCompactSummary`, and text opening with `<local-command-` or `[Request interrupted` (also when it sits beside a rejected tool result). `isMeta` lines are ignored entirely. Before this, running `/compact` or pressing Esc left "Waiting" on screen for the ten-minute limit: false activity.
+- **A log-covered harness's traffic now feeds Live** when the collector is on. Before, it was thrown away, so even with the collector Claude Code and Codex never showed a live speed. `poll_network` runs the same flow state machine, but for a covered harness it writes no record (`NetworkFlow.covered`) and only decorates the call the log says is due: phase `Streaming · network estimate`, TTFT counted from the log's request time, rate and tokens from bytes, `estimated`. A stream with no call due in the log, or one that began before the request, is shown nowhere.
+- **The Claude desktop app is `claude.exe` too.** `harness::is_host_app` tells it from Claude Code by folder (`\WindowsApps\Claude_…`, `\AnthropicClaude\`, `\WindowsApps\OpenAI.…`), and `processes::executables` passes full paths for anything named like a harness. The collector never samples a host app.
+- The flyout leads with one number: the speed arriving now if it can be seen, otherwise the last reply's, with TTFT, token count, how long ago, and the five most recent replies. **Keep open** stops it closing when focus moves. The tray tooltip leads with the speed.
+
+**Not done, and why:** the collector path is still unverified on a real machine, because approving the Windows administrator prompt is the user's act. Its join with the log is covered by tests with a scripted sampler only. The byte-to-token ratios (22 for Anthropic hosts, 180 otherwise) came from the macOS work and are not learned per harness here.
+
+### Tests
+
+`cd Windows && cargo test` (about 5 s after the build; cargo reads `.cargo/config.toml` from the folder it runs in, so run it there). **110 tests, passing on this PC.** The owner's `test-discipline` skill governs test work here: read `~/.claude/skills/test-discipline/SKILL.md` first.
+
+```
+tests/harness_parity.rs      40  parser and file-format edge cases; ported from HarnessRegression.cs
+tests/flow.rs                16  network-flow state machine, targets, history-write recovery, log/traffic join
+tests/smoke.rs               24  logs -> tracker -> history -> dashboard, discovery, presence, Claude Code request rules
+tests/proxy.rs                1  real loopback HTTP through the proxy; from ProxyRegression.cs
+tests/stream_measurement.rs   7  the proxy's stream meter per provider format
+tests/platform.rs             5  Win32 process queries against the test process itself
+src/app/** (unit)            17  number and time formatting, flyout placement, collector argument checks
+tests/common/                    fixtures: scratch folders, a scripted sampler, a writable SQLite connection
+tests/fixtures/                  a DeepSeek session compressed by the reference Zstandard library, and its generator
+```
+
+- Expected values are the C# suite's hand-worked ones, or are worked out in a comment beside the assertion. Do not replace one with whatever the code returns.
+- The big C# scenario was split into independent tests, each with its own tracker and scratch folder. Every C# check is kept or made stricter. One was replaced: "first poll returns fewer than 5" for the byte budget passed with either the 4 MB per-file cap or the 16 MB shared budget removed, so it is now two tests, one per bound.
+- Tests beyond the C# suite, each for something the port did itself instead of using a library: a history line as .NET wrote it; reference-encoder Zstandard frames with checksums; a WAL-mode Antigravity database at rest; the proxy's stream formats; the process queries; a harness that is running but idle.
+- `Tracker::list_processes_with` replaces the process scan, as `find_installed` replaces the presence scan. Fixtures pass an empty list so a harness running on the build machine cannot change a result.
+- The one-second rule is tested on the test's own clock: the fixture sets the log file's modified time, because the watcher dates growth from it.
+- Each area was shown able to fail by injecting defects one at a time into a scratch copy. First round: 24 defects, 23 caught at once; removing the per-file cap survived, which exposed the weak budget check above. Second round (the Live work): 16 defects, 15 caught at once; "a tool result is always a request" survived, which exposed that an interrupted tool call was being treated as a pending reply. Both are fixed and caught now.
+- **Not covered by any test:** the tray icon and its menu, the two windows beyond their pure helpers, the named pipe and UAC launch, the TCP-counter sampling, WSL home discovery, and TLS upstreams through the proxy. These need a desktop session, elevation or a network.
+
+CI (`.github/workflows/build.yml`, Windows job): `cargo test --locked`, then a check that at least 110 tests passed and none was ignored (lower that number only when tests are removed on purpose), both release builds, a 5 MB limit on each zip, and a start of the x64 exe with a malformed collector launch (exit code 2).
+
+### Layout and decisions
+
+```
+Windows/Cargo.toml         one package: library `speedtracker` + binary `SpeedTracker`
+Windows/src/lib.rs         UI-free core, a file-for-file port of SpeedTracker.Core and .Proxy
+  time.rs json.rs          100 ns UTC instants; lenient JSON readers
+  domain.rs                RequestRecord, ProviderIdentity, dashboard report
+  parsers.rs               Claude Code, Codex, OMP/Pi, Gemini CLI, DeepSeek parsers
+  logs.rs discovery.rs     session-file discovery and tailing, incremental Zstandard
+  opencode.rs antigravity.rs sqlite.rs   database-backed harnesses
+  tracker.rs               polling, live state, network-flow state machine
+  proxy.rs                 optional proxy and stream measurement
+Windows/src/app/           Windows only
+  tray.rs                  notification icon, tracker, child windows
+  collector.rs enhanced.rs elevated TCP-counter helper and its pipe
+  ui/                      Live flyout and Dashboard (egui)
+```
+
+- **One exe, three roles**, chosen by arguments: tray app (none, or `--dashboard` / `--live`), a window (`--ui live|dashboard`), the elevated collector (`--collector <pipe> <pid>`).
+- **Windows are separate short-lived processes.** The tray process holds no graphics; it starts `--ui …` children and talks to them in JSON lines over stdin/stdout (`app/ipc.rs`). The dashboard child reads `history.jsonl` itself. Idle memory measured about 32 MB for the tray process after backfill; a window adds its own process while open.
+- **SQLite is the copy Windows ships** (`winsqlite3.dll`, loaded at run time in `sqlite.rs`); nothing is bundled. It was 3.51 with JSON functions on this PC. Older Windows 10 builds are unchecked.
+- **Zstandard is `ruzstd`**, decoded block by block so a growing file can be tailed. Inside a frame that has not ended the decoder holds back its window, so text there appears late. Concatenated frames, the documented dsh layout, are unaffected.
+- **The proxy** is a small hand-written HTTP/1.1 server with `ureq` and Windows TLS upstream. It answers one request per connection (`Connection: close`) and does not decompress, so it asks upstreams for `identity`.
+- **UI is egui with the OpenGL backend.** A machine with no OpenGL 2 driver (some VMs and remote sessions, CI runners) cannot open the windows; the tray and collection still run. Text uses Segoe UI from the system.
+- History schema, file locations, harness names and every status string match the C# version, so existing `%LOCALAPPDATA%\SpeedTracker\history.jsonl` files read unchanged.
+- The exe has no icon or version resource yet; Explorer shows the generic one.
+
+### Building
+
+`.\Scripts\build_windows.ps1 -Runtime win-x64|win-arm64` writes `dist/SpeedTracker-<runtime>/SpeedTracker.exe` and the zip beside it. With the Visual Studio C++ tools (CI) it uses the MSVC targets with the C runtime linked in, so users need no redistributable. This PC has no Visual Studio: run `Scripts/setup_windows_gnu.ps1` once. It installs Rust's `x86_64-pc-windows-gnullvm` target, supplies the import-library tool and system import libraries that target lacks (under `~/.cargo/gnu-extras`), and writes the uncommitted `Windows/.cargo/config.toml`, which the build script then follows (x64 only). The plain `x86_64-pc-windows-gnu` target links but **every eframe program built with it crashes before `main`**; the cause was not found. Do not go back to it. In Git Bash, `export PATH="$HOME/.cargo/bin:$PATH"` first.
+
+### Verifying without clicking
+
+```bash
+# Render a window to a PNG. Standalone windows read SPEEDTRACKER_HOME but have no live state.
+SpeedTracker.exe --ui dashboard --tab overview|trends|calls --theme dark|light --screenshot out.png
+# The flyout with made-up state, for pictures and layout checks. docs/images/windows-live.png is `--demo waiting`.
+SpeedTracker.exe --ui live --demo idle|waiting|streaming --theme dark|light --screenshot out.png
+# Have the tray app's own child windows do it, which exercises the tray-to-window link.
+SPEEDTRACKER_WINDOW_ARGS="--screenshot|out.png" SpeedTracker.exe --live
+# Append a line to a file whenever live state changes (timings only). The Windows counterpart of the macOS trace.
+SPEEDTRACKER_TRACE=trace.log SpeedTracker.exe
+```
+
+If you are running as Claude Code, your own session is the test subject: the trace shows `Claude Code/Waiting` from each tool result until your reply lands, then the held speed changing about a second later. Debug builds keep a console, so a panic is readable; release builds have none. Quit the running app before rebuilding into `dist/`, and never run two instances.
+
+Verified on this PC: the tray process read 1,266 finished calls from real Claude Code, Codex, OMP and DeepSeek CLI logs; a second launch reopened the dashboard through the first; Overview, Trends, Calls and Live rendered correctly from that data in light and dark; the flyout received live state from the tray; `/health` answered on port 4141; and a trace of the release build followed this agent's own Claude Code calls, one record per reply, about a second after each. **Not verified:** clicking any control by hand; flyout placement on mixed-DPI displays; the UAC collector path and TCP counters; proxy forwarding to a real provider over TLS; opencode, Antigravity and Gemini CLI against real data on Windows (fixtures only); high contrast; screen readers; the ARM64 build on ARM hardware.

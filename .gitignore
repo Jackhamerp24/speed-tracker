@@ -6,3 +6,5 @@ Windows/**/bin/
 Windows/**/obj/
 *.zip
 .swiftpm/
+Windows/target/
+Windows/.cargo/

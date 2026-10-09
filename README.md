@@ -9,7 +9,7 @@ A menu bar app that shows how fast the model behind your coding agent is respond
 
 It needs no setup. Launch it, use your coding agent as usual, and the numbers appear. It reads what the agent already writes to disk and watches its network activity. It never changes an agent's configuration, and it keeps none of your prompts or replies.
 
-macOS is the main platform. A Windows 11 version is included and is experimental (see [Windows](#windows)).
+macOS is the main platform. A Windows 11 version is included: one file of about 3 MB, nothing to install (see [Windows](#windows)).
 
 | Live | Choosing what to watch | Dashboard |
 | --- | --- | --- |
@@ -79,9 +79,11 @@ A bolt appears in the menu bar. On first launch it reads the last seven days of 
 
 Requires Windows 11, x64 or ARM64.
 
-1. Download `SpeedTracker-win-x64.zip` or `SpeedTracker-win-arm64.zip` from the [latest release](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
-2. Extract the whole archive and run `SpeedTracker.exe`. Nothing else needs installing.
+1. Download `SpeedTracker-win-x64.zip` or `SpeedTracker-win-arm64.zip` (about 1.5 MB) from the [latest release](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
+2. Extract it and run `SpeedTracker.exe`. That one file is the whole app; nothing else needs installing.
 3. The app is unsigned, so SmartScreen may warn: choose **More info**, then **Run anyway**.
+
+An icon appears in the notification area (it may be in the overflow menu at first). To quit, right-click it.
 
 ## Using it
 
@@ -137,11 +139,16 @@ It listens on loopback only, refuses requests carrying a browser `Origin`, and d
 
 ## Windows
 
-The Windows version shares the measurement rules and the history format with macOS, and is a separate implementation in C#.
+The Windows version shares the measurement rules and the history format with macOS. It is a separate implementation in Rust: a single file of about 3 MB that uses the SQLite and TLS already in Windows.
 
-- **Without elevation** it reads harness session data, which covers every harness in the first table above.
-- **Network timing** needs the optional collector, which asks for administrator rights once you turn it on. Without it, harnesses that keep no session data are not measured.
-- **Status: experimental.** Its tests pass and the packages build in CI, but the tray, the windows and the collector have not yet been checked by hand on a Windows machine. Please report what you find.
+![Live flyout on Windows](docs/images/windows-live.png)
+
+*Sample data.*
+
+- **Tray icon.** Blue while a reply is in progress, grey otherwise. Hover for the latest speed, click for the Live flyout, double-click for the dashboard. **Keep open** in the flyout leaves it on screen while you work in another window.
+- **Without elevation** it reads harness session data, which covers every harness in the first table above. Harnesses write that data when a reply completes, so speed and TTFT appear as each reply ends; in between, Live shows that a reply is in progress and for how long, and keeps the last speed instead of dropping to zero.
+- **Speed while a reply is still streaming** needs the optional network collector (Settings in the flyout). Windows gives per-connection byte counters only to administrators, so it asks for approval when you turn it on. The same collector measures harnesses that keep no session data.
+- **Status.** The tests and both packages are built in CI. On a Windows 11 x64 PC the tray, the flyout and the dashboard have been run against real Claude Code, Codex, OMP and DeepSeek CLI sessions. The network collector, the ARM64 build and high-contrast mode have not yet been checked by hand. Please report what you find.
 
 ## Limits
 
@@ -161,14 +168,14 @@ The Windows version shares the measurement rules and the history format with mac
 ./Scripts/test.sh
 ```
 
-**Windows** needs the .NET 8 SDK.
+**Windows** needs [Rust](https://rustup.rs) and the Visual Studio C++ Build Tools. Without Visual Studio, run `.\Scripts\setup_windows_gnu.ps1` once instead; it sets Rust up to link on its own.
 
 ```powershell
 .\Scripts\build_windows.ps1 -Runtime win-x64
 ```
 
 ```powershell
-dotnet run --project Windows/SpeedTracker.Smoke/SpeedTracker.Smoke.csproj -c Release
+cd Windows; cargo test
 ```
 
 To see what the app detects on a Mac:
@@ -185,7 +192,7 @@ GitHub Actions builds and tests both apps on every push. Pushing a tag such as `
 Sources/SpeedTrackerCore   detection, session readers, flow tracking, history, dashboard analytics (no UI)
 Sources/SpeedTracker       macOS menu bar app and dashboard
 Tests/                     macOS tests
-Windows/                   Windows core, app, optional collector and proxy, tests
+Windows/                   Windows app in Rust: core, tray, windows, optional collector and proxy, tests
 Scripts/                   build and test scripts
 AGENTS.md                  notes for contributors and coding agents: formats, decisions, pitfalls
 ```
