@@ -349,11 +349,81 @@ Be honest about these when reporting, and verify them if you touch the area.
 - User-visible estimates carry `~`. Do not present an estimate as a measurement.
 - Before telling the owner something works, run it: tests, a snapshot, and a trace of the live app where the change is behavioural.
 
-## Windows app in Rust (shipping from 2026-10-10)
+## Windows app in Rust (2026-10-10; not released yet)
 
 Owner request: make the Windows download as light as possible; the C# release zip was about 112 MiB because it carried two .NET runtimes, WPF and ASP.NET Core. The Windows app is now Rust: one `SpeedTracker.exe`, **2.75 MB, 1.38 MB zipped** (x64 release, measured on this Windows 11 PC). CI tests and packages it; `Scripts/build_windows.ps1` builds it.
 
 **Where this replaces older text in this file.** Everything above that describes the Windows version as C#/.NET/WPF (the Layout block, Phase 3, the handoff, the `dotnet` commands, "smoke checks" and "parity checks") is history. The semantics it describes still hold; the code is the Rust port. The C# projects (`Windows/SpeedTracker.*`) and `Scripts/build_windows.sh` were removed by the owner on 2026-10-10; they are in git history before that if a reference is needed. CI built and tested the Rust app with MSVC for x64 and ARM64 for the first time on the same day, and passed.
+
+### How the Windows version works, start to finish
+
+Read this first if you are new to the Windows code.
+
+**One program, four jobs.** `SpeedTracker.exe` looks at its arguments (`app/mod.rs`) and becomes one of:
+
+| Started as | What it is | Lives |
+| --- | --- | --- |
+| no arguments | the **tray process**: icon, tracker, proxy | until Quit |
+| `--ui live` / `--ui dashboard` | a **window process**, started by the tray | while the window is open |
+| `--collector <pipe> <pid>` | the **elevated collector**, started by the tray after the user approves | while enabled |
+| `--icon-preview`, `--ui … --screenshot` | checking tools | a moment |
+
+**The tray process is the whole app; it has no graphics code running.** On start (`tray::run`) it takes a per-user mutex (a second launch just tells the first to open the dashboard), opens `history.jsonl`, builds the `Tracker`, starts the optional proxy on port 4141, and adds the notification-area icon. Then it sits in a Win32 message loop.
+
+**The tracker polls twice a second** (`Tracker::poll` in `tracker.rs`). Each poll:
+
+1. Tails every harness's session files and databases (`logs.rs`, `opencode.rs`, `antigravity.rs`), feeding new lines to that harness's parser (`parsers.rs`). A parser returns finished calls and keeps a small state: is a reply due, since when, which model.
+2. Builds the list of **calls in flight** (`LiveCall`) from parser state, proxy calls, and, if the collector is on, network flows.
+3. Writes each finished call to `history.jsonl` (`history.rs`), which skips anything whose `sourceKey` is already there. That is why re-reading seven days of logs on every launch is harmless.
+4. Works out which harnesses are present (installed, has logs, or running).
+5. If anything changed, calls its listeners.
+
+**What reaches the screen.** The tray listens for changes and does two things: redraws its icon and tooltip (`update_tray`), and, if a window is open, sends it a `Snapshot` (`app/ipc.rs`) as one line of JSON on the window's standard input. A snapshot holds the calls in flight, the harness list, the held speed and TTFT, the newest five records, the Live target and the collector's state. The window sends back one-line requests on its standard output: `SetTarget`, `SetEnhanced`, `OpenDashboard`.
+
+```
+harness logs ──> parsers ──┐
+collector (optional) ──────┼──> Tracker ──> history.jsonl
+proxy (optional) ──────────┘       │
+                                   ├──> tray icon + tooltip
+                                   └──> Snapshot (JSON lines) ──> window process
+                                              <── SetTarget / SetEnhanced / OpenDashboard
+```
+
+**Windows are separate processes on purpose.** egui and OpenGL cost tens of megabytes; keeping them out of the always-running process is what holds idle memory near 30 MB. A click on the icon starts `SpeedTracker.exe --ui live --work <work area>`; the flyout closes itself when it loses focus (unless **Keep open** is on) and its process ends. The dashboard is the same, except it also reads `history.jsonl` itself and re-reads it when the snapshot's `history_revision` moves.
+
+**The collector** exists because Windows gives per-connection byte counters only to administrators. Turning it on in Settings makes the tray create a named pipe that only this user and Administrators may open, then start itself elevated through the Windows approval prompt. The collector samples TCP counters of harness processes and writes `FlowSample` batches down the pipe. Nothing else in the app is ever elevated.
+
+### Changing the UI
+
+Everything visual is in `Windows/src/app/ui/` (about 2,500 lines) plus the icon drawing in `tray.rs`. **A UI overhaul should stay inside those files.** The core (`src/*.rs`) has no UI code and 93 tests of its own; a visual change that needs a core change is probably doing too much.
+
+- `ui/mod.rs`: the link to the tray (`Link`), the colour palette (`palette`), fonts and widget styling (`install_theme`), shared helpers (`text`, `card`, `format`), demo state, the screenshot wrapper.
+- `ui/live.rs`: the flyout. `ui/dashboard.rs`: the dashboard. `ui/plot.rs`: its charts.
+- The contract with the tray is `Snapshot`, `ToWindow` and `ToTray` in `app/ipc.rs`. Add fields with `#[serde(default)]`; do not rename or remove any, and do not put prompt or reply text in them.
+
+How to work on it without clicking, which is the loop to use:
+
+```bash
+cd Windows && cargo build
+E=target/x86_64-pc-windows-gnullvm/debug/SpeedTracker.exe
+$E --ui live --demo idle|waiting|streaming --theme dark|light --screenshot live.png
+SPEEDTRACKER_HOME=<a folder with a history.jsonl> $E --ui dashboard --tab overview|trends|calls --theme dark|light --screenshot dash.png
+$E --icon-preview icons.png
+```
+
+Look at every picture in both themes after each change. `--demo` state is made up in `ui/mod.rs`; extend it rather than screenshotting real history. Pictures for the README come from demo state only.
+
+Rules a redesign must keep (they are owner requirements or past bugs, see the top of this file):
+
+- The speed shown never drops to zero between replies; it holds the last value.
+- No activity is shown without evidence of a call. An open harness is not a call.
+- An estimate carries `~`. A missing value is `—`, never `0`.
+- The Live target is chosen in the flyout (Auto or one harness). No per-harness on/off switches.
+- The flyout stays small enough for a laptop screen and sits in the corner of the work area (`live::corner`, tested).
+- Light, dark and high-contrast (`palette`) all stay legible. Text is Segoe UI from the system; bundle no fonts.
+- The exe stays small. CI fails a zip over 5 MB. Check `cargo build --release` size before adding a dependency.
+
+**If egui is to be replaced:** because a window is just a process that reads snapshots and writes requests, another toolkit can take over `--ui` without touching the tray or the core. Slint is the candidate that keeps one small exe and can render without OpenGL. A web view (Tauri, WebView2) would make styling easy but depends on the WebView2 runtime and uses several times the memory, which is against the point of this rewrite. Neither has been tried here.
 
 ### What Live can and cannot show on Windows
 
