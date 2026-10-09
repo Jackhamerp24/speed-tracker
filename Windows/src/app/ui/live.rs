@@ -298,7 +298,7 @@ impl Live {
                 self.link.send(ToTray::SetEnhanced(false));
             }
         }
-        text(ui, "An optional elevated network collector requires Windows administrator approval. This dashboard stays unprivileged; no app restart is required. Passive network byte-flow estimates are not exact token counts or verified endpoint attribution.", 12.0, true);
+        text(ui, "Shows speed while a reply is still streaming, and measures harnesses that keep no session logs. Windows gives per-connection byte counts only to administrators, so it asks for approval; Speed Tracker itself stays unprivileged and needs no restart. Byte-flow speeds are estimates, marked “~”, not exact token counts or verified endpoint attribution.", 12.0, true);
         let mut status = snapshot.network_status.clone();
         if !snapshot.enhanced_available {
             status.push_str(
