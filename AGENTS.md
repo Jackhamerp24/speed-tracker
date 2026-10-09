@@ -74,7 +74,6 @@ Sources/SpeedTracker             menu-bar app plus dashboard window
 Tests/SpeedTrackerCoreTests      117 Core tests
 Scripts/                         build, test, icon and proxy smoke scripts
 Windows/Cargo.toml, src, tests   the Windows app, in Rust; see "Windows app in Rust" at the end
-Windows/SpeedTracker.*           the earlier C# version: no longer built or shipped, awaiting removal
 ```
 
 Two things are easy to confuse: `HarnessCatalog` classifies a **process** (automatic detection); `HarnessDetector` classifies a **User-Agent** (proxy only).
@@ -354,7 +353,7 @@ Be honest about these when reporting, and verify them if you touch the area.
 
 Owner request: make the Windows download as light as possible; the C# release zip was about 112 MiB because it carried two .NET runtimes, WPF and ASP.NET Core. The Windows app is now Rust: one `SpeedTracker.exe`, **2.75 MB, 1.38 MB zipped** (x64 release, measured on this Windows 11 PC). CI tests and packages it; `Scripts/build_windows.ps1` builds it.
 
-**Where this replaces older text in this file.** Everything above that describes the Windows version as C#/.NET/WPF (the Layout block, Phase 3, the handoff, the `dotnet` commands, "smoke checks" and "parity checks") is history. The semantics it describes still hold; the code is the Rust port. The C# projects (`Windows/SpeedTracker.*`) and `Scripts/build_windows.sh` are **still in the tree but are no longer built, tested or shipped**: removing them was blocked by the agent's permission system on 2026-10-10 and is left to the owner (`git rm -r Windows/SpeedTracker.Collector Windows/SpeedTracker.Core Windows/SpeedTracker.Proxy Windows/SpeedTracker.Smoke Windows/SpeedTracker.Windows Scripts/build_windows.sh`). Do not edit them, and do not keep them in step with the Rust code.
+**Where this replaces older text in this file.** Everything above that describes the Windows version as C#/.NET/WPF (the Layout block, Phase 3, the handoff, the `dotnet` commands, "smoke checks" and "parity checks") is history. The semantics it describes still hold; the code is the Rust port. The C# projects (`Windows/SpeedTracker.*`) and `Scripts/build_windows.sh` were removed by the owner on 2026-10-10; they are in git history before that if a reference is needed. CI built and tested the Rust app with MSVC for x64 and ARM64 for the first time on the same day, and passed.
 
 ### What Live can and cannot show on Windows
 
