@@ -333,7 +333,18 @@ impl App {
     }
 
     fn update_tray(&self, add: bool) {
-        let calls = self.tracker.active();
+        // Like the flyout, the icon follows the Live target: another harness's call does not light it.
+        let target = self.tracker.target();
+        let calls: Vec<_> = self
+            .tracker
+            .active()
+            .into_iter()
+            .filter(|call| {
+                target
+                    .as_ref()
+                    .is_none_or(|target| call.harness.eq_ignore_ascii_case(target))
+            })
+            .collect();
         let active = !calls.is_empty();
         let held = format_rate(self.tracker.held_rate(), self.tracker.held_rate_estimated());
         // The speed comes first: it is what the icon is hovered for.
@@ -345,7 +356,7 @@ impl App {
             None if active => format!("Speed Tracker · reply in progress · last {held}"),
             None => format!("Speed Tracker · {held} · TTFT {}", self.held_ttft()),
         };
-        if let Some(target) = self.tracker.target() {
+        if let Some(target) = &target {
             text.push_str(&format!(" · {target}"));
         }
         // The shell's tooltip is short; cut on a character boundary.
