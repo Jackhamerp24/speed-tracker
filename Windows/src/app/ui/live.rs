@@ -18,7 +18,9 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 const WIDTH: f32 = 390.0;
-const INITIAL_HEIGHT: f32 = 620.0;
+// The flyout's height on every tab, where the work area allows it.
+const HEIGHT: f32 = 832.0;
+const INITIAL_HEIGHT: f32 = HEIGHT;
 const MARGIN: i8 = 14;
 // Gap between the flyout and the edge of the work area, in pixels.
 const EDGE: f32 = 12.0;
@@ -1096,6 +1098,11 @@ impl Live {
     // Bottom Open Dashboard button
     fn render_open_dashboard_button(&self, ui: &mut egui::Ui) {
         let colors = colors(ui);
+        // On a tab shorter than the flyout, the button sits at the bottom edge, not under the content.
+        let gap = ui.clip_rect().bottom() - ui.cursor().top() - 32.0;
+        if gap > 0.0 && gap.is_finite() {
+            ui.add_space(gap);
+        }
         let (rect, response) =
             ui.allocate_exact_size(egui::vec2(ui.available_width(), 32.0), Sense::click());
         if response.clicked() {
@@ -1618,13 +1625,13 @@ impl eframe::App for Live {
         }));
 
         let scale = context.pixels_per_point();
-        let available = self.work.map_or(780.0, |[_, top, _, bottom]| {
+        let available = self.work.map_or(HEIGHT, |[_, top, _, bottom]| {
             (bottom - top) as f32 / scale - 2.0 * EDGE
         });
-        let wanted = (content.y + 2.0 * f32::from(MARGIN) + 2.0)
-            .max(if dialog_open { 340.0 } else { 100.0 })
-            .min(available.clamp(100.0, 780.0))
-            .round();
+        // Every tab is the same height, so switching tabs never moves or resizes the flyout. A tab with
+        // more than fits scrolls; one with less leaves its Open Dashboard button at the bottom.
+        let _ = content;
+        let wanted = HEIGHT.min(available.max(100.0)).round();
         let current = context.input(|input| input.screen_rect().height());
         if (wanted - current).abs() > 1.0 {
             context.send_viewport_cmd(ViewportCommand::InnerSize(egui::vec2(WIDTH, wanted)));
