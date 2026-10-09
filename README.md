@@ -65,8 +65,8 @@ Point any tool's base URL at the built-in local proxy and its streams are measur
 
 Requires macOS 14 or later, Apple silicon or Intel.
 
-1. Download `SpeedTracker-macOS.zip` from the [latest release](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
-2. Unzip it and move **Speed Tracker** to `Applications`.
+1. Download `SpeedTracker-macOS.dmg` from the [latest release](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
+2. Open it and drag **Speed Tracker** to `Applications`.
 3. The app is not signed with an Apple developer certificate, so macOS blocks the first launch. Either right-click the app and choose **Open**, or run:
 
    ```bash
@@ -79,8 +79,8 @@ A bolt appears in the menu bar. On first launch it reads the last seven days of 
 
 Requires Windows 11, x64 or ARM64.
 
-1. Download `SpeedTracker-win-x64.zip` or `SpeedTracker-win-arm64.zip` (about 1.5 MB) from the [latest release](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
-2. Extract it and run `SpeedTracker.exe`. That one file is the whole app; nothing else needs installing.
+1. Download `SpeedTracker-win-x64.exe` or `SpeedTracker-win-arm64.exe` (about 3 MB) from the [latest release](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
+2. Run it. That one file is the whole app; there is nothing to extract or install. Keep it somewhere it can stay, such as a folder of your own.
 3. The app is unsigned, so SmartScreen may warn: choose **More info**, then **Run anyway**.
 
 An icon appears in the notification area (it may be in the overflow menu at first). To quit, right-click it.

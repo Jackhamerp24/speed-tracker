@@ -65,8 +65,8 @@ Trỏ base URL của bất kỳ công cụ nào vào proxy cục bộ có sẵn 
 
 Cần macOS 14 trở lên, chip Apple silicon hoặc Intel.
 
-1. Tải `SpeedTracker-macOS.zip` từ [bản phát hành mới nhất](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
-2. Giải nén và kéo **Speed Tracker** vào `Applications`.
+1. Tải `SpeedTracker-macOS.dmg` từ [bản phát hành mới nhất](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
+2. Mở tệp đó và kéo **Speed Tracker** vào `Applications`.
 3. App chưa được ký bằng chứng chỉ nhà phát triển của Apple nên macOS chặn lần mở đầu tiên. Hãy nhấp chuột phải vào app rồi chọn **Open**, hoặc chạy:
 
    ```bash
@@ -79,8 +79,8 @@ Một biểu tượng tia chớp sẽ hiện trên thanh menu. Lần đầu ch�
 
 Cần Windows 11, x64 hoặc ARM64.
 
-1. Tải `SpeedTracker-win-x64.zip` hoặc `SpeedTracker-win-arm64.zip` (khoảng 1,5 MB) từ [bản phát hành mới nhất](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
-2. Giải nén và chạy `SpeedTracker.exe`. Tệp đó là toàn bộ app; không cần cài thêm gì.
+1. Tải `SpeedTracker-win-x64.exe` hoặc `SpeedTracker-win-arm64.exe` (khoảng 3 MB) từ [bản phát hành mới nhất](https://github.com/Jackhamerp24/speed-tracker/releases/latest).
+2. Chạy tệp đó. Nó là toàn bộ app; không cần giải nén hay cài thêm gì. Hãy để tệp ở một chỗ cố định, ví dụ một thư mục riêng của bạn.
 3. App chưa được ký nên SmartScreen có thể cảnh báo: chọn **More info**, rồi **Run anyway**.
 
 Một biểu tượng sẽ hiện ở khay hệ thống (lúc đầu có thể nằm trong phần biểu tượng ẩn). Muốn thoát, bấm chuột phải vào biểu tượng.

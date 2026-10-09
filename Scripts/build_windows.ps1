@@ -32,6 +32,7 @@ try {
 # The whole app is this one file: tray, windows, optional collector and proxy.
 New-Item -ItemType Directory -Force $Output | Out-Null
 Copy-Item (Join-Path $Root "Windows/target/$Target/release/SpeedTracker.exe") $Output -Force
-$Archive = "$Output.zip"
-Compress-Archive -Path (Join-Path $Output '*') -DestinationPath $Archive -Force
-Write-Output ("Built {0} ({1:N0} bytes)" -f $Archive, (Get-Item $Archive).Length)
+# The download is the exe itself, named for its platform: nothing to extract.
+$Download = "$Output.exe"
+Copy-Item (Join-Path $Output 'SpeedTracker.exe') $Download -Force
+Write-Output ("Built {0} ({1:N0} bytes)" -f $Download, (Get-Item $Download).Length)
