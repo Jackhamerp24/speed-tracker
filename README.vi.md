@@ -145,7 +145,7 @@ Bản Windows dùng chung quy tắc đo và định dạng lịch sử với mac
 
 *Dữ liệu mẫu.*
 
-- **Biểu tượng ở khay hệ thống.** Màu xanh khi đang có câu trả lời được tạo, màu xám khi không. Rê chuột để xem tốc độ mới nhất, bấm để mở cửa sổ Live, bấm đúp để mở dashboard. Nút **Keep open** giữ cửa sổ Live trên màn hình khi bạn làm việc ở cửa sổ khác.
+- **Biểu tượng ở khay hệ thống.** Biểu tượng hiển thị tốc độ mới nhất bằng số, màu xanh khi đang có câu trả lời được tạo và màu xám khi không. Rê chuột để xem tốc độ và TTFT, bấm để mở cửa sổ Live, bấm đúp để mở dashboard. Nút **Keep open** giữ cửa sổ Live trên màn hình khi bạn làm việc ở cửa sổ khác.
 - **Không cần quyền quản trị**, app đọc dữ liệu phiên của harness, tức là đủ cho mọi harness trong bảng đầu tiên ở trên. Harness chỉ ghi dữ liệu đó khi câu trả lời hoàn tất, nên tốc độ và TTFT hiện ra mỗi khi một câu trả lời kết thúc; trong lúc chờ, Live cho biết đang có câu trả lời được tạo và đã bao lâu, đồng thời giữ tốc độ gần nhất chứ không tụt về 0.
 - **Tốc độ trong lúc câu trả lời còn đang truyền về** cần bộ thu mạng tuỳ chọn (mục Settings trong cửa sổ Live). Windows chỉ cho quản trị viên đọc bộ đếm byte theo từng kết nối, nên app sẽ xin phép khi bạn bật lên. Bộ thu này cũng đo các harness không có dữ liệu phiên.
 - **Tình trạng.** Test và cả hai gói đều được build trên CI. Trên một máy Windows 11 x64, khay hệ thống, cửa sổ Live và dashboard đã được chạy với các phiên thật của Claude Code, Codex, OMP và DeepSeek CLI. Bộ thu mạng, bản ARM64 và chế độ tương phản cao chưa được kiểm tra bằng tay. Rất mong bạn báo lại nếu gặp lỗi.

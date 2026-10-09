@@ -371,12 +371,13 @@ What was changed:
 - **A log-covered harness's traffic now feeds Live** when the collector is on. Before, it was thrown away, so even with the collector Claude Code and Codex never showed a live speed. `poll_network` runs the same flow state machine, but for a covered harness it writes no record (`NetworkFlow.covered`) and only decorates the call the log says is due: phase `Streaming · network estimate`, TTFT counted from the log's request time, rate and tokens from bytes, `estimated`. A stream with no call due in the log, or one that began before the request, is shown nowhere.
 - **The Claude desktop app is `claude.exe` too.** `harness::is_host_app` tells it from Claude Code by folder (`\WindowsApps\Claude_…`, `\AnthropicClaude\`, `\WindowsApps\OpenAI.…`), and `processes::executables` passes full paths for anything named like a harness. The collector never samples a host app.
 - The flyout leads with one number: the speed arriving now if it can be seen, otherwise the last reply's, with TTFT, token count, how long ago, and the five most recent replies. **Keep open** stops it closing when focus moves. The tray tooltip leads with the speed.
+- **The tray icon is the number** (`icon_text`, `icon_pixels` in `tray.rs`), the counterpart of the macOS menu bar title: the speed rounded to at most three characters in a 4 x 7 pixel font, drawn at the notification area's real size, blue while a call is in flight and grey otherwise. Before any speed is known it is three bars. `SpeedTracker.exe --icon-preview out.png` draws every state at 16, 24 and 32 px; look at that after changing it. It has not been looked at in the real notification area by an agent.
 
 **Not done, and why:** the collector path is still unverified on a real machine, because approving the Windows administrator prompt is the user's act. Its join with the log is covered by tests with a scripted sampler only. The byte-to-token ratios (22 for Anthropic hosts, 180 otherwise) came from the macOS work and are not learned per harness here.
 
 ### Tests
 
-`cd Windows && cargo test` (about 5 s after the build; cargo reads `.cargo/config.toml` from the folder it runs in, so run it there). **110 tests, passing on this PC.** The owner's `test-discipline` skill governs test work here: read `~/.claude/skills/test-discipline/SKILL.md` first.
+`cd Windows && cargo test` (about 5 s after the build; cargo reads `.cargo/config.toml` from the folder it runs in, so run it there). **114 tests, passing on this PC.** The owner's `test-discipline` skill governs test work here: read `~/.claude/skills/test-discipline/SKILL.md` first.
 
 ```
 tests/harness_parity.rs      40  parser and file-format edge cases; ported from HarnessRegression.cs
@@ -385,7 +386,7 @@ tests/smoke.rs               24  logs -> tracker -> history -> dashboard, discov
 tests/proxy.rs                1  real loopback HTTP through the proxy; from ProxyRegression.cs
 tests/stream_measurement.rs   7  the proxy's stream meter per provider format
 tests/platform.rs             5  Win32 process queries against the test process itself
-src/app/** (unit)            17  number and time formatting, flyout placement, collector argument checks
+src/app/** (unit)            21  number and time formatting, flyout placement, tray icon, collector argument checks
 tests/common/                    fixtures: scratch folders, a scripted sampler, a writable SQLite connection
 tests/fixtures/                  a DeepSeek session compressed by the reference Zstandard library, and its generator
 ```
@@ -395,10 +396,10 @@ tests/fixtures/                  a DeepSeek session compressed by the reference 
 - Tests beyond the C# suite, each for something the port did itself instead of using a library: a history line as .NET wrote it; reference-encoder Zstandard frames with checksums; a WAL-mode Antigravity database at rest; the proxy's stream formats; the process queries; a harness that is running but idle.
 - `Tracker::list_processes_with` replaces the process scan, as `find_installed` replaces the presence scan. Fixtures pass an empty list so a harness running on the build machine cannot change a result.
 - The one-second rule is tested on the test's own clock: the fixture sets the log file's modified time, because the watcher dates growth from it.
-- Each area was shown able to fail by injecting defects one at a time into a scratch copy. First round: 24 defects, 23 caught at once; removing the per-file cap survived, which exposed the weak budget check above. Second round (the Live work): 16 defects, 15 caught at once; "a tool result is always a request" survived, which exposed that an interrupted tool call was being treated as a pending reply. Both are fixed and caught now.
+- Each area was shown able to fail by injecting defects one at a time into a scratch copy. First round: 24 defects, 23 caught at once; removing the per-file cap survived, which exposed the weak budget check above. Second round (the Live work): 19 defects, 18 caught at once; "a tool result is always a request" survived, which exposed that an interrupted tool call was being treated as a pending reply. Both are fixed and caught now.
 - **Not covered by any test:** the tray icon and its menu, the two windows beyond their pure helpers, the named pipe and UAC launch, the TCP-counter sampling, WSL home discovery, and TLS upstreams through the proxy. These need a desktop session, elevation or a network.
 
-CI (`.github/workflows/build.yml`, Windows job): `cargo test --locked`, then a check that at least 110 tests passed and none was ignored (lower that number only when tests are removed on purpose), both release builds, a 5 MB limit on each zip, and a start of the x64 exe with a malformed collector launch (exit code 2).
+CI (`.github/workflows/build.yml`, Windows job): `cargo test --locked`, then a check that at least 114 tests passed and none was ignored (lower that number only when tests are removed on purpose), both release builds, a 5 MB limit on each zip, and a start of the x64 exe with a malformed collector launch (exit code 2).
 
 ### Layout and decisions
 
@@ -440,6 +441,8 @@ SpeedTracker.exe --ui dashboard --tab overview|trends|calls --theme dark|light -
 SpeedTracker.exe --ui live --demo idle|waiting|streaming --theme dark|light --screenshot out.png
 # Have the tray app's own child windows do it, which exercises the tray-to-window link.
 SPEEDTRACKER_WINDOW_ARGS="--screenshot|out.png" SpeedTracker.exe --live
+# The tray icon's states at the sizes Windows uses, each also enlarged.
+SpeedTracker.exe --icon-preview out.png
 # Append a line to a file whenever live state changes (timings only). The Windows counterpart of the macOS trace.
 SPEEDTRACKER_TRACE=trace.log SpeedTracker.exe
 ```

@@ -70,7 +70,7 @@ jobs:
           "$passed tests passed, $ignored ignored"
           if ($ignored -ne 0) { throw "$ignored tests were ignored" }
           # Lower this only when tests are removed on purpose.
-          if ($passed -lt 110) { throw "only $passed tests ran; at least 110 are expected" }
+          if ($passed -lt 114) { throw "only $passed tests ran; at least 114 are expected" }
       - name: Build x64
         shell: pwsh
         run: ./Scripts/build_windows.ps1 -Runtime win-x64

@@ -145,7 +145,7 @@ The Windows version shares the measurement rules and the history format with mac
 
 *Sample data.*
 
-- **Tray icon.** Blue while a reply is in progress, grey otherwise. Hover for the latest speed, click for the Live flyout, double-click for the dashboard. **Keep open** in the flyout leaves it on screen while you work in another window.
+- **Tray icon.** It shows the latest speed as a number, blue while a reply is in progress and grey otherwise. Hover for speed and TTFT, click for the Live flyout, double-click for the dashboard. **Keep open** in the flyout leaves it on screen while you work in another window.
 - **Without elevation** it reads harness session data, which covers every harness in the first table above. Harnesses write that data when a reply completes, so speed and TTFT appear as each reply ends; in between, Live shows that a reply is in progress and for how long, and keeps the last speed instead of dropping to zero.
 - **Speed while a reply is still streaming** needs the optional network collector (Settings in the flyout). Windows gives per-connection byte counters only to administrators, so it asks for approval when you turn it on. The same collector measures harnesses that keep no session data.
 - **Status.** The tests and both packages are built in CI. On a Windows 11 x64 PC the tray, the flyout and the dashboard have been run against real Claude Code, Codex, OMP and DeepSeek CLI sessions. The network collector, the ARM64 build and high-contrast mode have not yet been checked by hand. Please report what you find.
